@@ -1,0 +1,14 @@
+{
+  "name": "@dops/core",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Configuration, SSH execution, pipelines and run history",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "dependencies": {
+    "yaml": "^2.9.1",
+    "zod": "^3.25.76"
+  }
+}
