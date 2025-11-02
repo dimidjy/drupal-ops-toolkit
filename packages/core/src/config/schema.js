@@ -16,6 +16,8 @@ const sshEndpoint = z.object({
   identityFile: z.string().optional(),
   passphraseEnv: z.string().optional(),
   agent: z.boolean().default(false),
+  /** Expected host key, e.g. "SHA256:..." from `ssh-keygen -lf`. */
+  hostFingerprint: z.string().optional(),
 });
 
 const bastion = sshEndpoint;
