@@ -4,3 +4,4 @@ export * from './ssh/executor.js';
 export * from './pipeline/placeholders.js';
 export * from './pipeline/runner.js';
 export * from './history/store.js';
+export * from './ssh/connect.js';
