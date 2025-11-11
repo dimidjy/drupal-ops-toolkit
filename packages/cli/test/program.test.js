@@ -65,6 +65,25 @@ describe('dops CLI', () => {
     expect(process.exitCode).toBe(1);
   });
 
+  it('prints rendered commands in dry-run mode without connecting', async () => {
+    const { out, commands } = await run(['deploy', 'cache-clear', '--dry-run']);
+    expect(commands).toEqual([]);
+    expect(out).toContain('deploy@10.0.0.1:/var/www/site');
+    expect(out).toContain('Cache: vendor/bin/drush cr');
+  });
+
+  it('lists recorded runs and shows a run log', async () => {
+    const { history } = await run(['deploy', 'cache-clear']);
+    const [latest] = await history.list();
+    let out = '';
+    const program = createProgram({ history: () => history, write: (t) => (out += t) });
+    program.exitOverride();
+    await program.parseAsync(['node', 'dops', 'history']);
+    expect(out).toContain('cache-clear → web1, web2');
+    await program.parseAsync(['node', 'dops', 'history', 'show', latest.id]);
+    expect(out).toContain('ok       [web2] Cache');
+  });
+
   it('rejects unknown pipelines', async () => {
     await expect(run(['deploy', 'nope'])).rejects.toThrow(/Unknown pipeline "nope"/);
   });

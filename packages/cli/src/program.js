@@ -5,6 +5,7 @@ import {
   PipelineRunner,
   RunHistory,
   loadConfig,
+  renderTemplate,
   sshConnector,
 } from '@dops/core';
 import { formatEvent } from './output.js';
@@ -59,34 +60,92 @@ export function createProgram(overrides = {}) {
     .description('run a pipeline on its targets')
     .argument('<pipeline>', 'pipeline name')
     .option('-t, --target <name...>', 'run on these targets instead of the pipeline defaults')
-    .action(async (pipelineName, /** @type {{ target?: string[] }} */ options) => {
-      const cfg = await config();
-      const pipeline = cfg.pipelines[pipelineName];
-      if (!pipeline) {
-        throw new Error(`Unknown pipeline "${pipelineName}". Run "dops pipelines" to list them.`);
-      }
-      const targetNames = options.target ?? pipeline.targets;
-      /** @type {Record<string, Target>} */
-      const targets = {};
-      for (const name of targetNames) {
-        const target = cfg.targets[name];
-        if (!target) throw new Error(`Unknown target "${name}"`);
-        targets[name] = target;
-      }
+    .option('-n, --dry-run', 'print the commands without connecting anywhere')
+    .action(
+      async (pipelineName, /** @type {{ target?: string[], dryRun?: boolean }} */ options) => {
+        const cfg = await config();
+        const pipeline = cfg.pipelines[pipelineName];
+        if (!pipeline) {
+          throw new Error(`Unknown pipeline "${pipelineName}". Run "dops pipelines" to list them.`);
+        }
+        const targetNames = options.target ?? pipeline.targets;
+        /** @type {Record<string, Target>} */
+        const targets = {};
+        for (const name of targetNames) {
+          const target = cfg.targets[name];
+          if (!target) throw new Error(`Unknown target "${name}"`);
+          targets[name] = target;
+        }
 
-      const runner = new PipelineRunner();
-      runner.on('event', (event) => ctx.write(formatEvent(event)));
-      const stopRecording = await ctx.history().record(runner);
-      const record = await runner.run({
-        pipelineName,
-        pipeline,
-        targets,
-        connect: ctx.connector(cfg),
+        if (options.dryRun) {
+          for (const [name, target] of Object.entries(targets)) {
+            ctx.write(
+              `${pc.cyan(`[${name}]`)} ${pc.dim(`${target.user}@${target.host}:${target.path}`)}\n`,
+            );
+            const params = {
+              target: name,
+              environment: target.environment ?? name,
+              path: target.path,
+            };
+            for (const step of pipeline.steps) {
+              ctx.write(`  ${step.name}: ${renderTemplate(step.run, params)}\n`);
+            }
+          }
+          return;
+        }
+
+        const runner = new PipelineRunner();
+        runner.on('event', (event) => ctx.write(formatEvent(event)));
+        const stopRecording = await ctx.history().record(runner);
+        const record = await runner.run({
+          pipelineName,
+          pipeline,
+          targets,
+          connect: ctx.connector(cfg),
+        });
+        await stopRecording();
+        if (record.status !== 'ok') {
+          process.exitCode = 1;
+        }
+      },
+    );
+
+  const history = program.command('history').description('show previous runs');
+
+  history
+    .command('list', { isDefault: true })
+    .description('list recent runs')
+    .option('-l, --limit <n>', 'number of runs', '20')
+    .option('-p, --pipeline <name>', 'only runs of this pipeline')
+    .action(async (/** @type {{ limit: string, pipeline?: string }} */ options) => {
+      const runs = await ctx.history().list({
+        limit: Number(options.limit),
+        ...(options.pipeline ? { pipeline: options.pipeline } : {}),
       });
-      await stopRecording();
-      if (record.status !== 'ok') {
-        process.exitCode = 1;
+      if (!runs.length) {
+        ctx.write('No runs yet.\n');
+        return;
       }
+      for (const run of runs) {
+        const status = run.status === 'ok' ? pc.green(run.status) : pc.red(run.status);
+        ctx.write(
+          `${pc.dim(run.startedAt.slice(0, 16).replace('T', ' '))}  ${status.padEnd(16)} ${run.pipeline} → ${run.targets.join(', ')}  ${pc.dim(run.id)}\n`,
+        );
+      }
+    });
+
+  history
+    .command('show')
+    .description('print the steps and output of a run')
+    .argument('<id>', 'run id (from "dops history")')
+    .action(async (id) => {
+      const store = ctx.history();
+      const run = await store.get(id);
+      if (!run) throw new Error(`No run with id ${id}`);
+      for (const step of run.steps) {
+        ctx.write(`${step.status.padEnd(8)} [${step.target}] ${step.name}\n`);
+      }
+      ctx.write(`\n${(await store.readLog(id)) ?? '(no output recorded)'}\n`);
     });
 
   return program;
