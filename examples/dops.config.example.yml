@@ -1,0 +1,57 @@
+# Copy to dops.config.yml (gitignored) and adjust.
+# No secrets here: SSH uses your key file or agent, and values like hosts can
+# come from the environment with ${VAR}.
+
+bastions:
+  jump:
+    host: ${DOPS_BASTION_HOST}
+    user: ops
+    identityFile: ~/.ssh/id_ed25519
+    # passphraseEnv: DOPS_KEY_PASSPHRASE
+
+targets:
+  staging:
+    host: 10.0.1.10
+    user: deploy
+    identityFile: ~/.ssh/id_ed25519
+    bastion: jump
+    path: /var/www/project
+    environment: staging
+  prod-web1:
+    host: 10.0.2.11
+    user: deploy
+    agent: true
+    bastion: jump
+    path: /var/www/project
+    environment: production
+  prod-web2:
+    host: 10.0.2.12
+    user: deploy
+    agent: true
+    bastion: jump
+    path: /var/www/project
+    environment: production
+
+pipelines:
+  cache-clear:
+    description: Rebuild Drupal caches
+    targets: [staging]
+    steps:
+      - name: Rebuild caches
+        run: vendor/bin/drush cr
+
+  deploy:
+    description: Pull code, install dependencies, update the database and config
+    targets: [prod-web1, prod-web2]
+    steps:
+      - name: Pull code
+        run: git pull --ff-only
+      - name: Install dependencies
+        run: composer install --no-dev --no-interaction --optimize-autoloader
+        timeoutSeconds: 900
+      - name: Database updates
+        run: vendor/bin/drush updb -y
+      - name: Import configuration
+        run: vendor/bin/drush cim -y
+      - name: Rebuild caches
+        run: vendor/bin/drush cr
