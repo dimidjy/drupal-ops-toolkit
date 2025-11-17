@@ -56,17 +56,38 @@ export function createProgram(overrides = {}) {
     });
 
   program
+    .command('sites')
+    .description('list sites and the parameters they provide')
+    .action(async () => {
+      const { sites } = await config();
+      for (const [name, params] of Object.entries(sites)) {
+        const values = Object.entries(params).map(([k, v]) => `${k}=${v}`);
+        ctx.write(`${pc.bold(name)}  ${pc.dim(values.join(' '))}\n`);
+      }
+    });
+
+  program
     .command('deploy')
     .description('run a pipeline on its targets')
     .argument('<pipeline>', 'pipeline name')
     .option('-t, --target <name...>', 'run on these targets instead of the pipeline defaults')
+    .option('-s, --site <name>', 'site whose parameters fill the {placeholders}')
     .option('-n, --dry-run', 'print the commands without connecting anywhere')
     .action(
-      async (pipelineName, /** @type {{ target?: string[], dryRun?: boolean }} */ options) => {
+      async (
+        pipelineName,
+        /** @type {{ target?: string[], site?: string, dryRun?: boolean }} */ options,
+      ) => {
         const cfg = await config();
         const pipeline = cfg.pipelines[pipelineName];
         if (!pipeline) {
           throw new Error(`Unknown pipeline "${pipelineName}". Run "dops pipelines" to list them.`);
+        }
+        let site;
+        if (options.site) {
+          const params = cfg.sites[options.site];
+          if (!params) throw new Error(`Unknown site "${options.site}"`);
+          site = { name: options.site, params };
         }
         const targetNames = options.target ?? pipeline.targets;
         /** @type {Record<string, Target>} */
@@ -86,6 +107,7 @@ export function createProgram(overrides = {}) {
               target: name,
               environment: target.environment ?? name,
               path: target.path,
+              ...(site ? { site: site.name, ...site.params } : {}),
             };
             for (const step of pipeline.steps) {
               ctx.write(`  ${step.name}: ${renderTemplate(step.run, params)}\n`);
@@ -101,6 +123,7 @@ export function createProgram(overrides = {}) {
           pipelineName,
           pipeline,
           targets,
+          ...(site ? { site } : {}),
           connect: ctx.connector(cfg),
         });
         await stopRecording();

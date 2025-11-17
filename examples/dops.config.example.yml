@@ -32,13 +32,21 @@ targets:
     path: /var/www/project
     environment: production
 
+# Multisite: values become {placeholders} with `dops deploy <pipeline> --site fr`.
+sites:
+  default:
+    alias: '@self'
+  fr:
+    alias: '@fr'
+    uri: fr.example.com
+
 pipelines:
   cache-clear:
-    description: Rebuild Drupal caches
+    description: Rebuild Drupal caches for one site
     targets: [staging]
     steps:
       - name: Rebuild caches
-        run: vendor/bin/drush cr
+        run: vendor/bin/drush {alias} cr
 
   deploy:
     description: Pull code, install dependencies, update the database and config

@@ -6,6 +6,9 @@ import { RunHistory, parseConfig } from '@dops/core';
 import { createProgram } from '../src/program.js';
 
 const config = parseConfig(`
+sites:
+  default: { alias: '@self' }
+  fr: { alias: '@fr', uri: fr.example.com }
 targets:
   web1: { host: 10.0.0.1, user: deploy, agent: true, path: /var/www/site }
   web2: { host: 10.0.0.2, user: deploy, agent: true, path: /var/www/site }
@@ -15,6 +18,10 @@ pipelines:
     targets: [web1, web2]
     steps:
       - { name: Cache, run: vendor/bin/drush cr }
+  site-cache:
+    targets: [web1]
+    steps:
+      - { name: Cache, run: 'vendor/bin/drush {alias} cr' }
 `);
 
 async function run(args, { exitCodes = {} } = {}) {
@@ -82,6 +89,17 @@ describe('dops CLI', () => {
     expect(out).toContain('cache-clear → web1, web2');
     await program.parseAsync(['node', 'dops', 'history', 'show', latest.id]);
     expect(out).toContain('ok       [web2] Cache');
+  });
+
+  it('fills site parameters with --site', async () => {
+    const { commands } = await run(['deploy', 'site-cache', '--site', 'fr']);
+    expect(commands).toEqual(['web1: vendor/bin/drush @fr cr']);
+    const { out } = await run(['sites']);
+    expect(out).toContain('alias=@fr uri=fr.example.com');
+  });
+
+  it('rejects unknown sites', async () => {
+    await expect(run(['deploy', 'site-cache', '--site', 'de'])).rejects.toThrow(/Unknown site/);
   });
 
   it('rejects unknown pipelines', async () => {
