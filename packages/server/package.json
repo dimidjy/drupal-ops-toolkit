@@ -1,0 +1,14 @@
+{
+  "name": "@dops/server",
+  "version": "0.1.0",
+  "private": true,
+  "description": "HTTP API and live run stream for the dops dashboard",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "dependencies": {
+    "@dops/core": "^0.1.0",
+    "fastify": "^5.12.7"
+  }
+}
