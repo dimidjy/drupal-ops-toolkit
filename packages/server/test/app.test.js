@@ -2,6 +2,7 @@ import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import WebSocket from 'ws';
 import { RunHistory, parseConfig } from '@dops/core';
 import { buildServer } from '../src/app.js';
 import { startServer } from '../src/start.js';
@@ -86,6 +87,50 @@ describe('dashboard API', () => {
     expect(commands).toEqual(['web2: drush @fr cr']);
     const log = await app.inject({ url: `/api/runs/${id}/log`, headers: auth });
     expect(log.body).toContain('drush @fr cr');
+  });
+
+  it('streams run events over a WebSocket', async () => {
+    const { app } = await setup({ delayMs: 50 });
+    await app.listen({ host: '127.0.0.1', port: 0 });
+    const { port } = app.server.address();
+    try {
+      const started = await app.inject({
+        method: 'POST',
+        url: '/api/runs',
+        headers: auth,
+        payload: { pipeline: 'cache-clear', site: 'fr' },
+      });
+      const { id } = started.json();
+      const events = await new Promise((resolve, reject) => {
+        const received = [];
+        const ws = new WebSocket(`ws://127.0.0.1:${port}/api/runs/${id}/events?token=${TOKEN}`);
+        ws.on('message', (data) => received.push(JSON.parse(String(data))));
+        ws.on('close', () => resolve(received));
+        ws.on('error', reject);
+      });
+      const types = events.map((e) => e.type);
+      expect(types[0]).toBe('run-start');
+      expect(types).toContain('output');
+      expect(types.at(-1)).toBe('run-end');
+      expect(events.at(-1).record.status).toBe('ok');
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('closes WebSocket connections without the token', async () => {
+    const { app } = await setup();
+    await app.listen({ host: '127.0.0.1', port: 0 });
+    const { port } = app.server.address();
+    try {
+      const code = await new Promise((resolve) => {
+        const ws = new WebSocket(`ws://127.0.0.1:${port}/api/runs/x/events`);
+        ws.on('close', (closeCode) => resolve(closeCode));
+      });
+      expect(code).toBe(1008);
+    } finally {
+      await app.close();
+    }
   });
 
   it('refuses a second run on a busy target', async () => {
