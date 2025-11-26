@@ -12,7 +12,8 @@
     "node": ">=20"
   },
   "scripts": {
-    "typecheck": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json && tsc -p packages/web",
+    "build": "npm run build -w @dops/web",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
@@ -26,6 +27,8 @@
     "@types/ssh2": "^1.15.6",
     "@types/ws": "^8.18.2",
     "eslint": "^9.39.5",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^5.2.0",
     "globals": "^16.5.0",
     "prettier": "^3.9.10",
     "typescript": "^5.9.3",
