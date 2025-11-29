@@ -1,16 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+import { Pipelines } from './components/Pipelines.jsx';
 import { TokenGate } from './components/TokenGate.jsx';
 
 /**
  * @param {{ api: import('./api.js').Api, logout: () => void }} props
  */
 function Dashboard({ api, logout }) {
-  const [pipelines, setPipelines] = useState(/** @type {import('./api.js').PipelineInfo[]} */ ([]));
-  const [error, setError] = useState('');
-
-  useEffect(() => {
-    api.pipelines().then(setPipelines, (e) => setError(e.message));
-  }, [api]);
+  const [lastRun, setLastRun] = useState('');
 
   return (
     <div className="layout">
@@ -22,16 +18,12 @@ function Dashboard({ api, logout }) {
         </button>
       </header>
       <main>
-        {error && <p className="error">{error}</p>}
-        <h2>Pipelines</h2>
-        <ul className="cards">
-          {pipelines.map((p) => (
-            <li key={p.name} className="card">
-              <strong>{p.name}</strong>
-              <span className="muted">{p.description}</span>
-            </li>
-          ))}
-        </ul>
+        {lastRun && (
+          <p className="notice">
+            Run started: <code>{lastRun}</code>
+          </p>
+        )}
+        <Pipelines api={api} onStarted={setLastRun} />
       </main>
     </div>
   );

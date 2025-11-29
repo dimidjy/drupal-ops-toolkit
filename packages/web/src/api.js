@@ -65,6 +65,11 @@ export function createApi(token, base = '') {
     targets: () => request('/api/targets'),
     /** @returns {Promise<string[]>} */
     sites: () => request('/api/sites'),
+    /**
+     * @param {{ pipeline: string, targets?: string[], site?: string }} body
+     * @returns {Promise<{ id: string }>}
+     */
+    startRun: (body) => request('/api/runs', { method: 'POST', body: JSON.stringify(body) }),
   };
 }
 
