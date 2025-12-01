@@ -70,6 +70,27 @@ export function createApi(token, base = '') {
      * @returns {Promise<{ id: string }>}
      */
     startRun: (body) => request('/api/runs', { method: 'POST', body: JSON.stringify(body) }),
+    /** @param {string} id */
+    cancelRun: (id) => request(`/api/runs/${id}/cancel`, { method: 'POST' }),
+    /**
+     * @param {string} id
+     * @returns {Promise<string>}
+     */
+    runLog: (id) => request(`/api/runs/${id}/log`),
+    /**
+     * Subscribes to a run's events; returns a function that closes the socket.
+     *
+     * @param {string} id
+     * @param {(event: any) => void} onEvent
+     */
+    streamRun(id, onEvent) {
+      const origin = base || window.location.origin;
+      const url = new URL(`/api/runs/${id}/events`, origin.replace(/^http/, 'ws'));
+      url.searchParams.set('token', token);
+      const socket = new WebSocket(url);
+      socket.onmessage = (message) => onEvent(JSON.parse(message.data));
+      return () => socket.close();
+    },
   };
 }
 

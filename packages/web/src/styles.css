@@ -144,3 +144,76 @@ fieldset {
   border-left: 3px solid var(--accent);
   background: var(--surface);
 }
+
+.run-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.75rem;
+}
+
+.run-header .actions {
+  margin-left: auto;
+  display: flex;
+  gap: 1rem;
+}
+
+.status {
+  font-size: 0.6em;
+  text-transform: uppercase;
+  padding: 0.15rem 0.45rem;
+  border-radius: 4px;
+  border: 1px solid currentColor;
+  vertical-align: middle;
+}
+
+.status.ok {
+  color: var(--ok);
+}
+
+.status.failed,
+.status.cancelled {
+  color: var(--fail);
+}
+
+.run-steps {
+  list-style: none;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.run-steps > li {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+}
+
+.run-steps > li.failed {
+  border-color: var(--fail);
+}
+
+.run-steps > li.skipped {
+  opacity: 0.6;
+}
+
+.run-steps .icon {
+  display: inline-block;
+  width: 1.4em;
+}
+
+pre {
+  font-family: var(--mono);
+  font-size: 0.85em;
+  white-space: pre-wrap;
+  max-height: 420px;
+  overflow: auto;
+  margin: 0.5rem 0 0;
+}
+
+button.danger {
+  background: var(--fail);
+  border-color: var(--fail);
+}

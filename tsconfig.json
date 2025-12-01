@@ -13,5 +13,7 @@
     "skipLibCheck": true,
     "resolveJsonModule": true
   },
-  "include": ["packages/*/src/**/*.js"]
+  "include": ["packages/*/src/**/*.js"],
+  // The dashboard is checked with its own browser settings (packages/web/tsconfig.json).
+  "exclude": ["packages/web"]
 }
