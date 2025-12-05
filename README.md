@@ -21,3 +21,15 @@ a bastion when needed. A failing step stops the run; later targets are
 skipped so a broken release never reaches every server.
 
 SSH uses your key file or agent. No passwords are stored in the config.
+
+## Dashboard
+
+```bash
+npm run build                 # builds the React dashboard once
+npx dops serve                # http://127.0.0.1:4800
+```
+
+The dashboard lists pipelines, starts runs on chosen targets and sites,
+streams their output live and keeps the run history. It only listens on
+localhost and every API call needs a token (`DOPS_TOKEN`, or the one printed
+on start). Exposing it on another interface requires `DOPS_ALLOW_REMOTE=1`.

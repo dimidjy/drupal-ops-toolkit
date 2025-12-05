@@ -1,4 +1,4 @@
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -158,6 +158,21 @@ describe('dashboard API', () => {
       payload: { pipeline: 'cache-clear', command: 'rm -rf /' },
     });
     expect(adHoc.statusCode).toBe(400);
+  });
+
+  it('serves the dashboard with a fallback for client-side routes', async () => {
+    const staticDir = await mkdtemp(join(tmpdir(), 'dops-web-'));
+    await writeFile(join(staticDir, 'index.html'), '<div id="root"></div>');
+    const app = buildServer({
+      config,
+      history: new RunHistory(staticDir),
+      token: TOKEN,
+      connect: async () => ({}),
+      staticDir,
+    });
+    expect((await app.inject({ url: '/' })).body).toContain('root');
+    expect((await app.inject({ url: '/history' })).body).toContain('root');
+    expect((await app.inject({ url: '/api/nope', headers: auth })).statusCode).toBe(404);
   });
 
   it('refuses to listen on a public interface by default', async () => {

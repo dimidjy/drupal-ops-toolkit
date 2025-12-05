@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@dops/core": "^0.1.0",
+    "@dops/server": "^0.1.0",
     "commander": "^14.0.3",
     "picocolors": "^1.1.1"
   }

@@ -1,8 +1,12 @@
 import { randomBytes } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 import { RunHistory, loadConfig, sshConnector } from '@dops/core';
 import { buildServer } from './app.js';
 
 const LOOPBACK = new Set(['127.0.0.1', '::1', 'localhost']);
+
+/** Output of `npm run build -w @dops/web`. */
+export const DASHBOARD_DIR = fileURLToPath(new URL('../../web/dist', import.meta.url));
 
 /**
  * Starts the dashboard server. It binds to localhost unless DOPS_ALLOW_REMOTE=1,
@@ -33,6 +37,7 @@ export async function startServer({
     connect: sshConnector(config, env),
     token,
     logger: { level: env.DOPS_LOG_LEVEL ?? 'info' },
+    staticDir: DASHBOARD_DIR,
   });
   const address = await app.listen({ host, port });
   if (!env.DOPS_TOKEN) {

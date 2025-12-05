@@ -8,6 +8,7 @@ import {
   renderTemplate,
   sshConnector,
 } from '@dops/core';
+import { startServer } from '@dops/server';
 import { formatEvent } from './output.js';
 
 /** @import { Config, Target, CommandExecutor } from '@dops/core' */
@@ -132,6 +133,19 @@ export function createProgram(overrides = {}) {
         }
       },
     );
+
+  program
+    .command('serve')
+    .description('start the dashboard (API + web UI) on localhost')
+    .option('-p, --port <port>', 'port', '4800')
+    .option('--host <host>', 'interface to bind; non-local needs DOPS_ALLOW_REMOTE=1', '127.0.0.1')
+    .action(async (/** @type {{ port: string, host: string }} */ options) => {
+      await startServer({
+        configFile: program.opts().config,
+        host: options.host,
+        port: Number(options.port),
+      });
+    });
 
   const history = program.command('history').description('show previous runs');
 

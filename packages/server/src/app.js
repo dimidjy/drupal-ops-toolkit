@@ -1,4 +1,6 @@
 import { timingSafeEqual } from 'node:crypto';
+import { existsSync } from 'node:fs';
+import fastifyStatic from '@fastify/static';
 import websocket from '@fastify/websocket';
 import Fastify from 'fastify';
 import { RunConflictError, RunManager } from './runs.js';
@@ -15,6 +17,7 @@ import { RunConflictError, RunManager } from './runs.js';
  * @property {(name: string, target: Target) => Promise<CommandExecutor>} connect
  * @property {string} token Bearer token required on every /api request.
  * @property {boolean | object} [logger]
+ * @property {string} [staticDir] Built dashboard to serve on /, if present.
  */
 
 /**
@@ -37,7 +40,7 @@ function requestToken(request) {
 }
 
 /** @param {ServerOptions} options */
-export function buildServer({ config, history, connect, token, logger = false }) {
+export function buildServer({ config, history, connect, token, logger = false, staticDir }) {
   if (!token || token.length < 16) {
     throw new Error('A token of at least 16 characters is required');
   }
@@ -183,6 +186,16 @@ export function buildServer({ config, history, connect, token, logger = false })
       ? reply.code(202).send({ id })
       : reply.code(404).send({ error: 'No active run with this id' });
   });
+
+  if (staticDir && existsSync(staticDir)) {
+    app.register(fastifyStatic, { root: staticDir });
+    // Client-side routes: serve index.html for anything that is not the API.
+    app.setNotFoundHandler((request, reply) =>
+      request.method === 'GET' && !request.url.startsWith('/api/')
+        ? reply.sendFile('index.html')
+        : reply.code(404).send({ error: 'Not found' }),
+    );
+  }
 
   return app;
 }
