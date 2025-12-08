@@ -4,6 +4,7 @@ import {
   DEFAULT_CONFIG_FILE,
   PipelineRunner,
   RunHistory,
+  describeTarget,
   loadConfig,
   renderTemplate,
   sshConnector,
@@ -101,9 +102,7 @@ export function createProgram(overrides = {}) {
 
         if (options.dryRun) {
           for (const [name, target] of Object.entries(targets)) {
-            ctx.write(
-              `${pc.cyan(`[${name}]`)} ${pc.dim(`${target.user}@${target.host}:${target.path}`)}\n`,
-            );
+            ctx.write(`${pc.cyan(`[${name}]`)} ${pc.dim(describeTarget(target))}\n`);
             const params = {
               target: name,
               environment: target.environment ?? name,

@@ -29,7 +29,7 @@ const { Client } = ssh2;
  */
 
 /**
- * @typedef {Pick<import('../config/schema.js').Target,
+ * @typedef {Pick<import('../config/schema.js').SshTarget,
  *   'host' | 'port' | 'user' | 'identityFile' | 'passphraseEnv' | 'agent' | 'hostFingerprint'>} Endpoint
  */
 
@@ -142,7 +142,7 @@ export class SshExecutor {
   }
 
   /**
-   * @param {import('../config/schema.js').Target} target
+   * @param {import('../config/schema.js').SshTarget} target
    * @param {import('../config/schema.js').Bastion} [bastion]
    * @param {NodeJS.ProcessEnv} [env]
    */

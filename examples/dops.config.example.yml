@@ -32,6 +32,12 @@ targets:
     path: /var/www/project
     environment: production
 
+  # This machine: steps run in a local shell inside path.
+  local:
+    local: true
+    path: ~/projects/shop
+    environment: dev
+
 # Multisite: values become {placeholders} with `dops deploy <pipeline> --site fr`.
 sites:
   default:
@@ -63,3 +69,16 @@ pipelines:
         run: vendor/bin/drush cim -y
       - name: Rebuild caches
         run: vendor/bin/drush cr
+
+  local-refresh:
+    description: Rebuild the local DDEV site after pulling a branch
+    targets: [local]
+    steps:
+      - name: Install dependencies
+        run: ddev composer install
+      - name: Database updates
+        run: ddev drush updb -y
+      - name: Import configuration
+        run: ddev drush cim -y
+      - name: Rebuild caches
+        run: ddev drush cr

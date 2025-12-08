@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import fastifyStatic from '@fastify/static';
 import websocket from '@fastify/websocket';
 import Fastify from 'fastify';
+import { isLocalTarget } from '@dops/core';
 import { RunConflictError, RunManager } from './runs.js';
 
 /**
@@ -116,7 +117,7 @@ export function buildServer({ config, history, connect, token, logger = false, s
     Object.entries(config.targets).map(([name, target]) => ({
       name,
       environment: target.environment ?? null,
-      host: target.host,
+      host: isLocalTarget(target) ? 'local' : target.host,
     })),
   );
 

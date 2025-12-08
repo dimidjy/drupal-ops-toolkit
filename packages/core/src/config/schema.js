@@ -22,7 +22,7 @@ const sshEndpoint = z.object({
 
 const bastion = sshEndpoint;
 
-const target = sshEndpoint.extend({
+const sshTarget = sshEndpoint.extend({
   /** Working directory the steps run in. */
   path: z.string().default('.'),
   /** Name of a bastion to tunnel through. */
@@ -30,6 +30,15 @@ const target = sshEndpoint.extend({
   /** Free-form label shown in the CLI and dashboard, e.g. "staging". */
   environment: z.string().optional(),
 });
+
+/** This machine: steps run in a local shell, e.g. `ddev drush cr` in a project folder. */
+const localTarget = z.object({
+  local: z.literal(true),
+  path: z.string().default('.'),
+  environment: z.string().optional(),
+});
+
+const target = z.union([localTarget, sshTarget]);
 
 const step = z.object({
   name: z.string().min(1),
@@ -57,6 +66,7 @@ export const configSchema = z
   })
   .superRefine((config, ctx) => {
     for (const [targetName, t] of Object.entries(config.targets)) {
+      if ('local' in t) continue;
       if (t.bastion && !config.bastions[t.bastion]) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
@@ -88,6 +98,27 @@ export const configSchema = z
 /** @typedef {z.infer<typeof configSchema>} Config */
 /** @typedef {z.infer<typeof bastion>} Bastion */
 /** @typedef {z.infer<typeof target>} Target */
+/** @typedef {z.infer<typeof sshTarget>} SshTarget */
+/** @typedef {z.infer<typeof localTarget>} LocalTarget */
+
+/**
+ * @param {Target} target
+ * @returns {target is LocalTarget}
+ */
+export function isLocalTarget(target) {
+  return 'local' in target && target.local === true;
+}
+
+/**
+ * Short description for logs and the dashboard, e.g. "deploy@10.0.0.1:/var/www".
+ *
+ * @param {Target} target
+ */
+export function describeTarget(target) {
+  return isLocalTarget(target)
+    ? `local:${target.path}`
+    : `${target.user}@${target.host}:${target.path}`;
+}
 /** @typedef {z.infer<typeof pipeline>} Pipeline */
 /** @typedef {z.infer<typeof step>} Step */
 /** @typedef {z.infer<typeof site>} SiteParams */

@@ -22,6 +22,10 @@ skipped so a broken release never reaches every server.
 
 SSH uses your key file or agent. No passwords are stored in the config.
 
+A target with `local: true` runs its steps in a shell on this machine, in its
+`path`. That's handy for local routines like `ddev drush cim` after switching
+branches, with the same history and live output as remote runs.
+
 ## Dashboard
 
 ```bash
