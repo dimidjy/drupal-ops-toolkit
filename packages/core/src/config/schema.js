@@ -63,6 +63,12 @@ export const configSchema = z
     targets: z.record(name, target).default({}),
     sites: z.record(name, site).default({}),
     pipelines: z.record(name, pipeline).default({}),
+    dashboard: z
+      .object({
+        /** Allow free-form commands from the dashboard (localhost + token only). */
+        allowCommands: z.boolean().default(true),
+      })
+      .default({}),
   })
   .superRefine((config, ctx) => {
     for (const [targetName, t] of Object.entries(config.targets)) {

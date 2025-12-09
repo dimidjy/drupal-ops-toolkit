@@ -70,6 +70,11 @@ export function createApi(token, base = '') {
      * @returns {Promise<{ id: string }>}
      */
     startRun: (body) => request('/api/runs', { method: 'POST', body: JSON.stringify(body) }),
+    /**
+     * @param {{ command: string, targets: string[], site?: string }} body
+     * @returns {Promise<{ id: string }>}
+     */
+    runCommand: (body) => request('/api/commands', { method: 'POST', body: JSON.stringify(body) }),
     /** @returns {Promise<import('./components/History.jsx').RunSummary[]>} */
     runs: () => request('/api/runs'),
     /** @param {string} id */

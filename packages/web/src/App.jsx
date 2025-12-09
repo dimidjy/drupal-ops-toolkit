@@ -4,7 +4,7 @@ import { Pipelines } from './components/Pipelines.jsx';
 import { RunView } from './components/RunView.jsx';
 import { TokenGate } from './components/TokenGate.jsx';
 
-const TABS = /** @type {const} */ (['Pipelines', 'History']);
+const TABS = /** @type {const} */ (['Pipelines', 'Local', 'History']);
 
 /**
  * @param {{ api: import('./api.js').Api, logout: () => void }} props
@@ -40,6 +40,8 @@ function Dashboard({ api, logout }) {
           <RunView api={api} runId={runId} onClose={() => setRunId('')} />
         ) : tab === 'Pipelines' ? (
           <Pipelines api={api} onStarted={setRunId} />
+        ) : tab === 'Local' ? (
+          <Pipelines key="local" api={api} onStarted={setRunId} scope="local" />
         ) : (
           <History api={api} onOpen={setRunId} />
         )}

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { QuickCommand } from './QuickCommand.jsx';
 
 /**
  * @import { Api, PipelineInfo, TargetInfo } from '../api.js'
@@ -11,7 +12,9 @@ import { useEffect, useState } from 'react';
  *   onRun: (body: { pipeline: string, targets: string[], site?: string }) => Promise<void> }} props
  */
 function PipelineCard({ pipeline, targets, sites, onRun }) {
-  const [selected, setSelected] = useState(pipeline.targets);
+  const [selected, setSelected] = useState(
+    pipeline.targets.filter((name) => targets.some((t) => t.name === name)),
+  );
   const [site, setSite] = useState('');
   const [busy, setBusy] = useState(false);
   const needsSite = pipeline.steps.some((step) =>
@@ -74,9 +77,12 @@ function PipelineCard({ pipeline, targets, sites, onRun }) {
 }
 
 /**
- * @param {{ api: Api, onStarted: (runId: string) => void }} props
+ * Remote scope: SSH targets and their pipelines. Local scope: targets with
+ * `local: true` (commands on this machine) and pipelines that only use them.
+ *
+ * @param {{ api: Api, onStarted: (runId: string) => void, scope?: 'remote' | 'local' }} props
  */
-export function Pipelines({ api, onStarted }) {
+export function Pipelines({ api, onStarted, scope = 'remote' }) {
   const [pipelines, setPipelines] = useState(/** @type {PipelineInfo[]} */ ([]));
   const [targets, setTargets] = useState(/** @type {TargetInfo[]} */ ([]));
   const [sites, setSites] = useState(/** @type {string[]} */ ([]));
@@ -104,16 +110,38 @@ export function Pipelines({ api, onStarted }) {
     }
   }
 
+  const isLocal = (/** @type {string} */ name) =>
+    targets.find((t) => t.name === name)?.host === 'local';
+  const scoped = targets.filter((t) => (t.host === 'local') === (scope === 'local'));
+  const shown = pipelines.filter(
+    (p) => p.targets.every(isLocal) === (scope === 'local') || !targets.length,
+  );
+
   return (
     <section>
-      <h2>Pipelines</h2>
+      <h2>{scope === 'local' ? 'Local' : 'Pipelines'}</h2>
       {error && <p className="error">{error}</p>}
+      {scope === 'local' && !scoped.length && !error ? (
+        <p className="muted">
+          No local targets. Add one with <code>local: true</code> and a <code>path</code> to the
+          config.
+        </p>
+      ) : (
+        <QuickCommand
+          api={api}
+          targets={scoped}
+          sites={sites}
+          title={scope === 'local' ? 'Command on this machine' : 'Quick command'}
+          placeholder={scope === 'local' ? 'ddev drush cr' : 'vendor/bin/drush {alias} status'}
+          onStarted={onStarted}
+        />
+      )}
       <ul className="cards">
-        {pipelines.map((pipeline) => (
+        {shown.map((pipeline) => (
           <PipelineCard
             key={pipeline.name}
             pipeline={pipeline}
-            targets={targets}
+            targets={scoped}
             sites={sites}
             onRun={onRun}
           />

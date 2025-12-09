@@ -102,6 +102,20 @@ describe('dops CLI', () => {
     await expect(run(['deploy', 'site-cache', '--site', 'de'])).rejects.toThrow(/Unknown site/);
   });
 
+  it('runs an ad-hoc command on several targets', async () => {
+    const { commands, history } = await run([
+      'exec',
+      '-t',
+      'web1',
+      'web2',
+      '--',
+      'drush',
+      'status',
+    ]);
+    expect(commands).toEqual(['web1: drush status', 'web2: drush status']);
+    expect((await history.list())[0]?.pipeline).toBe('command');
+  });
+
   it('rejects unknown pipelines', async () => {
     await expect(run(['deploy', 'nope'])).rejects.toThrow(/Unknown pipeline "nope"/);
   });

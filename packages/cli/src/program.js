@@ -134,6 +134,50 @@ export function createProgram(overrides = {}) {
     );
 
   program
+    .command('exec')
+    .description('run one shell command on targets, e.g. dops exec -t web1 web2 -- drush status')
+    .argument('<command...>', 'command to run (quote it or put it after --)')
+    .requiredOption('-t, --target <name...>', 'targets to run on')
+    .option('-s, --site <name>', 'site whose parameters fill {placeholders}')
+    .action(
+      async (
+        /** @type {string[]} */ words,
+        /** @type {{ target: string[], site?: string }} */ options,
+      ) => {
+        const cfg = await config();
+        const command = words.join(' ');
+        /** @type {Record<string, Target>} */
+        const targets = {};
+        for (const name of options.target) {
+          const target = cfg.targets[name];
+          if (!target) throw new Error(`Unknown target "${name}"`);
+          targets[name] = target;
+        }
+        let site;
+        if (options.site) {
+          const params = cfg.sites[options.site];
+          if (!params) throw new Error(`Unknown site "${options.site}"`);
+          site = { name: options.site, params };
+        }
+        const runner = new PipelineRunner();
+        runner.on('event', (event) => ctx.write(formatEvent(event)));
+        const stopRecording = await ctx.history().record(runner);
+        const record = await runner.run({
+          pipelineName: 'command',
+          pipeline: {
+            targets: options.target,
+            steps: [{ name: command, run: command, continueOnError: true, timeoutSeconds: 1800 }],
+          },
+          targets,
+          ...(site ? { site } : {}),
+          connect: ctx.connector(cfg),
+        });
+        await stopRecording();
+        if (record.steps.some((step) => step.status !== 'ok')) process.exitCode = 1;
+      },
+    );
+
+  program
     .command('serve')
     .description('start the dashboard (API + web UI) on localhost')
     .option('-p, --port <port>', 'port', '4800')

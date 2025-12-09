@@ -3,7 +3,7 @@ import { EventEmitter } from 'node:events';
 import { PipelineRunner } from '@dops/core';
 
 /**
- * @import { Config, Target, CommandExecutor, RunEvent, RunHistory, RunRecord } from '@dops/core'
+ * @import { Config, Target, CommandExecutor, Pipeline, RunEvent, RunHistory, RunRecord } from '@dops/core'
  */
 
 export class RunConflictError extends Error {
@@ -55,6 +55,43 @@ export class RunManager extends EventEmitter {
   async start(request) {
     const pipeline = this.config.pipelines[request.pipeline];
     if (!pipeline) throw new Error(`Unknown pipeline "${request.pipeline}"`);
+    return this.#launch(request.pipeline, pipeline, request);
+  }
+
+  /**
+   * Runs one ad-hoc shell command on the given targets, recorded like a pipeline
+   * run named "command".
+   *
+   * @param {object} request
+   * @param {string} request.command
+   * @param {string[]} request.targets
+   * @param {string} [request.site]
+   */
+  async command(request) {
+    if (!request.command.trim()) throw new Error('Empty command');
+    if (!request.targets.length) throw new Error('Choose at least one target');
+    /** @type {Pipeline} */
+    const pipeline = {
+      targets: request.targets,
+      steps: [
+        {
+          name: request.command,
+          run: request.command,
+          continueOnError: true,
+          timeoutSeconds: 1800,
+        },
+      ],
+    };
+    return this.#launch('command', pipeline, request);
+  }
+
+  /**
+   * @param {string} pipelineName
+   * @param {Pipeline} pipeline
+   * @param {{ targets?: string[], site?: string }} request
+   * @returns {Promise<{ id: string, done: Promise<RunRecord> }>}
+   */
+  async #launch(pipelineName, pipeline, request) {
     const targetNames = request.targets?.length ? request.targets : pipeline.targets;
 
     /** @type {Record<string, Target>} */
@@ -80,7 +117,7 @@ export class RunManager extends EventEmitter {
     /** @type {ActiveRun} */
     const run = {
       id,
-      pipeline: request.pipeline,
+      pipeline: pipelineName,
       targets: targetNames,
       events: [],
       controller: new AbortController(),
@@ -96,7 +133,7 @@ export class RunManager extends EventEmitter {
     const done = runner
       .run({
         runId: id,
-        pipelineName: request.pipeline,
+        pipelineName,
         pipeline,
         targets,
         ...(site ? { site } : {}),

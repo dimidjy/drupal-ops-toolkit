@@ -148,6 +148,34 @@ export function buildServer({ config, history, connect, token, logger = false, s
     },
   );
 
+  app.post(
+    '/api/commands',
+    {
+      schema: {
+        body: {
+          type: 'object',
+          required: ['command', 'targets'],
+          additionalProperties: false,
+          properties: {
+            command: { type: 'string', minLength: 1 },
+            targets: { type: 'array', items: { type: 'string' }, minItems: 1 },
+            site: { type: 'string' },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      if (!config.dashboard.allowCommands) {
+        return reply.code(403).send({ error: 'Commands are disabled (dashboard.allowCommands)' });
+      }
+      const body = /** @type {{ command: string, targets: string[], site?: string }} */ (
+        request.body
+      );
+      const { id } = await runs.command(body);
+      return reply.code(202).send({ id });
+    },
+  );
+
   app.get('/api/runs', async (request) => {
     const query = /** @type {{ limit?: string, pipeline?: string }} */ (request.query);
     const active = [...runs.active.values()].map((run) => ({

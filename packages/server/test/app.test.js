@@ -191,4 +191,37 @@ describe('dashboard API', () => {
       }),
     ).toThrow(/at least 16/);
   });
+
+  it('runs an ad-hoc command and records it as a "command" run', async () => {
+    const { app, commands, history } = await setup();
+    const started = await app.inject({
+      method: 'POST',
+      url: '/api/commands',
+      headers: auth,
+      payload: { command: 'drush {alias} status', targets: ['web1'], site: 'fr' },
+    });
+    expect(started.statusCode).toBe(202);
+    await waitFor(async () => (await history.list())[0]);
+    expect(commands).toEqual(['web1: drush @fr status']);
+    expect((await history.list())[0]?.pipeline).toBe('command');
+  });
+
+  it('refuses commands when the dashboard disallows them', async () => {
+    const { app } = await setup();
+    const locked = buildServer({
+      config: { ...config, dashboard: { allowCommands: false } },
+      history: new RunHistory(await mkdtemp(join(tmpdir(), 'dops-server-'))),
+      token: TOKEN,
+      connect: async () => ({ exec: async () => ({ code: 0 }), close: async () => {} }),
+    });
+    const payload = { command: 'id', targets: ['web1'] };
+    const response = await locked.inject({
+      method: 'POST',
+      url: '/api/commands',
+      headers: auth,
+      payload,
+    });
+    expect(response.statusCode).toBe(403);
+    await app.close();
+  });
 });

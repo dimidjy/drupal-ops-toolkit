@@ -12,6 +12,7 @@ cp examples/dops.config.example.yml dops.config.yml   # adjust targets and pipel
 npx dops pipelines                    # what can I run?
 npx dops deploy cache-clear --dry-run # show the commands per target
 npx dops deploy deploy                # run it, with live output
+npx dops exec -t prod-web1 prod-web2 -- drush status   # one-off command
 npx dops history                      # previous runs
 npx dops history show <run-id>        # steps and full output of one run
 ```
@@ -34,6 +35,8 @@ npx dops serve                # http://127.0.0.1:4800
 ```
 
 The dashboard lists pipelines, starts runs on chosen targets and sites,
-streams their output live and keeps the run history. It only listens on
+streams their output live and keeps the run history. A quick-command box runs
+any one-off command (`drush status`, `tail -n 50 …/php-error.log`) on the
+ticked servers, and the Local tab does the same on this machine. It only listens on
 localhost and every API call needs a token (`DOPS_TOKEN`, or the one printed
 on start). Exposing it on another interface requires `DOPS_ALLOW_REMOTE=1`.
