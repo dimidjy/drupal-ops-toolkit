@@ -26,6 +26,7 @@ import { renderTemplate } from './placeholders.js';
  * @property {string} id
  * @property {string} pipeline
  * @property {string} [site]
+ * @property {Params} [params]
  * @property {string[]} targets
  * @property {RunStatus} status
  * @property {string} startedAt
@@ -47,6 +48,8 @@ import { renderTemplate } from './placeholders.js';
  * @property {Pipeline} pipeline
  * @property {Record<string, Target>} targets Targets to run on, in order.
  * @property {{ name: string, params: Params }} [site]
+ * @property {Params} [defaults] Parameter defaults, overridden by the site.
+ * @property {Params} [params] Values given for this run; they win over everything.
  * @property {(targetName: string, target: Target) => Promise<CommandExecutor>} connect
  *   Opens an executor for a target: SSH in production, a fake in tests.
  * @property {AbortSignal} [signal]
@@ -85,7 +88,9 @@ export class PipelineRunner extends EventEmitter {
         target: targetName,
         environment: target.environment ?? targetName,
         path: target.path,
+        ...options.defaults,
         ...(options.site ? { site: options.site.name, ...options.site.params } : {}),
+        ...options.params,
       };
       // Render everything up front: a typo in step 3 must not leave step 1 half-applied.
       const commands = options.pipeline.steps.map((step) => renderTemplate(step.run, params));
@@ -154,6 +159,7 @@ export class PipelineRunner extends EventEmitter {
       id: runId,
       pipeline: options.pipelineName,
       ...(options.site ? { site: options.site.name } : {}),
+      ...(options.params && Object.keys(options.params).length ? { params: options.params } : {}),
       targets: targetNames,
       status,
       startedAt,

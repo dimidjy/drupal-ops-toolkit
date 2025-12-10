@@ -11,6 +11,9 @@ const TOKEN = 'test-token-0123456789';
 const auth = { authorization: `Bearer ${TOKEN}` };
 
 const config = parseConfig(`
+params:
+  branch: { description: Branch, default: main }
+  module: { description: Module to enable }
 sites:
   fr: { alias: '@fr' }
 targets:
@@ -21,6 +24,10 @@ pipelines:
     targets: [web1, web2]
     steps:
       - { name: Cache, run: 'drush {alias} cr' }
+  enable:
+    targets: [web1]
+    steps:
+      - { name: Enable, run: 'git checkout {branch} && drush en {module}' }
 `);
 
 async function setup({ delayMs = 0, exitCode = 0 } = {}) {
@@ -223,5 +230,26 @@ describe('dashboard API', () => {
     });
     expect(response.statusCode).toBe(403);
     await app.close();
+  });
+
+  it('asks for missing parameters and fills them in', async () => {
+    const { app, commands, history } = await setup();
+    const pipelines = (await app.inject({ url: '/api/pipelines', headers: auth })).json();
+    expect(pipelines.find((p) => p.name === 'enable').params).toEqual(['branch', 'module']);
+    const params = (await app.inject({ url: '/api/params', headers: auth })).json();
+    expect(params[0]).toEqual({ name: 'branch', description: 'Branch', default: 'main' });
+
+    const start = (payload) =>
+      app.inject({ method: 'POST', url: '/api/runs', headers: auth, payload });
+    const missing = await start({ pipeline: 'enable' });
+    expect(missing.statusCode).toBe(400);
+    expect(missing.json().missing).toEqual(['module']);
+    expect((await start({ pipeline: 'enable', params: { module: 'a\nb' } })).statusCode).toBe(400);
+
+    expect(
+      (await start({ pipeline: 'enable', params: { module: 'admin_toolbar' } })).statusCode,
+    ).toBe(202);
+    await waitFor(async () => (await history.list())[0]);
+    expect(commands).toEqual(['web1: git checkout main && drush en admin_toolbar']);
   });
 });

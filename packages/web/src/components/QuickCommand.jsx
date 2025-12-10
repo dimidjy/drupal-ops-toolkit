@@ -1,6 +1,10 @@
 import { useState } from 'react';
+import { ParamFields, placeholdersIn, splitParams, useParamValues } from './ParamFields.jsx';
 
-/** @import { Api, TargetInfo } from '../api.js' */
+/**
+ * @import { Api, TargetInfo } from '../api.js'
+ * @import { ParamContext } from './ParamFields.jsx'
+ */
 
 const RECENT_KEY = 'dops-recent-commands';
 
@@ -25,10 +29,10 @@ function saveRecent(commands) {
 /**
  * Runs one shell command on the chosen targets, with live output in the run view.
  *
- * @param {{ api: Api, targets: TargetInfo[], sites: string[], title: string,
- *   placeholder: string, onStarted: (runId: string) => void }} props
+ * @param {{ api: Api, targets: TargetInfo[], sites: string[], paramContext: ParamContext,
+ *   title: string, placeholder: string, onStarted: (runId: string) => void }} props
  */
-export function QuickCommand({ api, targets, sites, title, placeholder, onStarted }) {
+export function QuickCommand({ api, targets, sites, paramContext, title, placeholder, onStarted }) {
   const [command, setCommand] = useState('');
   const [selected, setSelected] = useState(/** @type {string[]} */ ([]));
   const [site, setSite] = useState('');
@@ -37,6 +41,9 @@ export function QuickCommand({ api, targets, sites, title, placeholder, onStarte
   const [busy, setBusy] = useState(false);
   const chosen = selected.filter((name) => targets.some((t) => t.name === name));
   const effective = chosen.length || targets.length !== 1 ? chosen : targets.map((t) => t.name);
+  const values = useParamValues(paramContext);
+  const { needsSite, fields } = splitParams(placeholdersIn(command), site, paramContext);
+  const incomplete = fields.some((name) => !values.valueOf(name).trim()) || (needsSite && !site);
 
   /** @param {string} name */
   const toggle = (name) =>
@@ -54,6 +61,7 @@ export function QuickCommand({ api, targets, sites, title, placeholder, onStarte
         command,
         targets: effective,
         ...(site ? { site } : {}),
+        ...(fields.length ? { params: values.collect(fields) } : {}),
       });
       const next = [command, ...recent.filter((c) => c !== command)].slice(0, 15);
       setRecent(next);
@@ -103,6 +111,7 @@ export function QuickCommand({ api, targets, sites, title, placeholder, onStarte
           ))}
         </fieldset>
       )}
+      <ParamFields names={fields} context={paramContext} values={values} />
       <div className="row">
         {sites.length > 0 && (
           <select value={site} onChange={(e) => setSite(e.target.value)}>
@@ -112,7 +121,7 @@ export function QuickCommand({ api, targets, sites, title, placeholder, onStarte
             ))}
           </select>
         )}
-        <button type="submit" disabled={busy || !command.trim() || !effective.length}>
+        <button type="submit" disabled={busy || !command.trim() || !effective.length || incomplete}>
           {busy ? 'Starting…' : 'Run'}
         </button>
         <span className="muted hint">Ctrl+Enter</span>

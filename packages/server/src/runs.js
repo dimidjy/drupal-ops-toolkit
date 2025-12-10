@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
-import { PipelineRunner } from '@dops/core';
+import { PipelineRunner, assertParamValues, missingParams, paramDefaults } from '@dops/core';
 
 /**
  * @import { Config, Target, CommandExecutor, Pipeline, RunEvent, RunHistory, RunRecord } from '@dops/core'
@@ -11,6 +11,15 @@ export class RunConflictError extends Error {
   constructor(targets) {
     super(`A run is already in progress on ${targets.join(', ')}`);
     this.name = 'RunConflictError';
+  }
+}
+
+export class MissingParamsError extends Error {
+  /** @param {string[]} missing */
+  constructor(missing) {
+    super(`Missing values for ${missing.join(', ')}`);
+    this.name = 'MissingParamsError';
+    this.missing = missing;
   }
 }
 
@@ -50,6 +59,7 @@ export class RunManager extends EventEmitter {
    * @param {string} request.pipeline
    * @param {string[]} [request.targets]
    * @param {string} [request.site]
+   * @param {Record<string, string>} [request.params]
    * @returns {Promise<{ id: string, done: Promise<RunRecord> }>}
    */
   async start(request) {
@@ -66,6 +76,7 @@ export class RunManager extends EventEmitter {
    * @param {string} request.command
    * @param {string[]} request.targets
    * @param {string} [request.site]
+   * @param {Record<string, string>} [request.params]
    */
   async command(request) {
     if (!request.command.trim()) throw new Error('Empty command');
@@ -88,7 +99,7 @@ export class RunManager extends EventEmitter {
   /**
    * @param {string} pipelineName
    * @param {Pipeline} pipeline
-   * @param {{ targets?: string[], site?: string }} request
+   * @param {{ targets?: string[], site?: string, params?: Record<string, string> }} request
    * @returns {Promise<{ id: string, done: Promise<RunRecord> }>}
    */
   async #launch(pipelineName, pipeline, request) {
@@ -112,6 +123,16 @@ export class RunManager extends EventEmitter {
       if (!params) throw new Error(`Unknown site "${request.site}"`);
       site = { name: request.site, params };
     }
+
+    const values = request.params ?? {};
+    try {
+      assertParamValues(values);
+    } catch (error) {
+      throw Object.assign(/** @type {Error} */ (error), { statusCode: 400 });
+    }
+    const defaults = paramDefaults(this.config);
+    const missing = missingParams(pipeline, defaults, site?.params ?? {}, values);
+    if (missing.length) throw new MissingParamsError(missing);
 
     const id = randomUUID();
     /** @type {ActiveRun} */
@@ -137,6 +158,8 @@ export class RunManager extends EventEmitter {
         pipeline,
         targets,
         ...(site ? { site } : {}),
+        defaults,
+        params: values,
         connect: this.connect,
         signal: run.controller.signal,
       })

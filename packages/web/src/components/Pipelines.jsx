@@ -1,25 +1,28 @@
 import { useEffect, useState } from 'react';
+import { ParamFields, splitParams, useParamValues } from './ParamFields.jsx';
 import { QuickCommand } from './QuickCommand.jsx';
 
 /**
  * @import { Api, PipelineInfo, TargetInfo } from '../api.js'
+ * @import { ParamContext } from './ParamFields.jsx'
  */
 
 /**
- * One pipeline card: choose targets and a site, then start a run.
+ * One pipeline card: choose targets, a site and parameter values, then start a run.
  *
- * @param {{ pipeline: PipelineInfo, targets: TargetInfo[], sites: string[],
- *   onRun: (body: { pipeline: string, targets: string[], site?: string }) => Promise<void> }} props
+ * @param {{ pipeline: PipelineInfo, targets: TargetInfo[], sites: string[], paramContext: ParamContext,
+ *   onRun: (body: { pipeline: string, targets: string[], site?: string,
+ *     params?: Record<string, string> }) => Promise<void> }} props
  */
-function PipelineCard({ pipeline, targets, sites, onRun }) {
+function PipelineCard({ pipeline, targets, sites, paramContext, onRun }) {
   const [selected, setSelected] = useState(
     pipeline.targets.filter((name) => targets.some((t) => t.name === name)),
   );
   const [site, setSite] = useState('');
   const [busy, setBusy] = useState(false);
-  const needsSite = pipeline.steps.some((step) =>
-    /(?<!\$)\{(?!target|environment|path)\w+\}/.test(step.run),
-  );
+  const values = useParamValues(paramContext);
+  const { needsSite, fields } = splitParams(pipeline.params, site, paramContext);
+  const incomplete = fields.some((name) => !values.valueOf(name).trim());
 
   /** @param {string} name */
   const toggle = (name) =>
@@ -30,7 +33,12 @@ function PipelineCard({ pipeline, targets, sites, onRun }) {
   async function run() {
     setBusy(true);
     try {
-      await onRun({ pipeline: pipeline.name, targets: selected, ...(site ? { site } : {}) });
+      await onRun({
+        pipeline: pipeline.name,
+        targets: selected,
+        ...(site ? { site } : {}),
+        ...(fields.length ? { params: values.collect(fields) } : {}),
+      });
     } finally {
       setBusy(false);
     }
@@ -69,7 +77,11 @@ function PipelineCard({ pipeline, targets, sites, onRun }) {
           ))}
         </select>
       )}
-      <button onClick={run} disabled={busy || !selected.length || (needsSite && !site)}>
+      <ParamFields names={fields} context={paramContext} values={values} />
+      <button
+        onClick={run}
+        disabled={busy || !selected.length || (needsSite && !site) || incomplete}
+      >
         {busy ? 'Starting…' : 'Run'}
       </button>
     </li>
@@ -86,20 +98,24 @@ export function Pipelines({ api, onStarted, scope = 'remote' }) {
   const [pipelines, setPipelines] = useState(/** @type {PipelineInfo[]} */ ([]));
   const [targets, setTargets] = useState(/** @type {TargetInfo[]} */ ([]));
   const [sites, setSites] = useState(/** @type {string[]} */ ([]));
+  const [paramContext, setParamContext] = useState(
+    /** @type {ParamContext} */ ({ definitions: [], siteParams: {} }),
+  );
   const [error, setError] = useState('');
 
   useEffect(() => {
-    Promise.all([api.pipelines(), api.targets(), api.sites()]).then(
-      ([p, t, s]) => {
+    Promise.all([api.pipelines(), api.targets(), api.sites(), api.params(), api.siteParams()]).then(
+      ([p, t, s, definitions, siteParams]) => {
         setPipelines(p);
         setTargets(t);
         setSites(s);
+        setParamContext({ definitions, siteParams });
       },
       (e) => setError(e.message),
     );
   }, [api]);
 
-  /** @param {{ pipeline: string, targets: string[], site?: string }} body */
+  /** @param {{ pipeline: string, targets: string[], site?: string, params?: Record<string, string> }} body */
   async function onRun(body) {
     setError('');
     try {
@@ -131,6 +147,7 @@ export function Pipelines({ api, onStarted, scope = 'remote' }) {
           api={api}
           targets={scoped}
           sites={sites}
+          paramContext={paramContext}
           title={scope === 'local' ? 'Command on this machine' : 'Quick command'}
           placeholder={scope === 'local' ? 'ddev drush cr' : 'vendor/bin/drush {alias} status'}
           onStarted={onStarted}
@@ -143,6 +160,7 @@ export function Pipelines({ api, onStarted, scope = 'remote' }) {
             pipeline={pipeline}
             targets={scoped}
             sites={sites}
+            paramContext={paramContext}
             onRun={onRun}
           />
         ))}

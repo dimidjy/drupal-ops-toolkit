@@ -57,12 +57,19 @@ const pipeline = z.object({
 /** Per-site values available to steps as {placeholders}. */
 const site = z.record(z.string(), z.union([z.string(), z.number(), z.boolean()]));
 
+/** A value steps can use as {name}; asked for at run time when not given. */
+const param = z.object({
+  description: z.string().optional(),
+  default: z.string().optional(),
+});
+
 export const configSchema = z
   .object({
     bastions: z.record(name, bastion).default({}),
     targets: z.record(name, target).default({}),
     sites: z.record(name, site).default({}),
     pipelines: z.record(name, pipeline).default({}),
+    params: z.record(z.string().regex(/^[a-zA-Z_][a-zA-Z0-9_]*$/), param).default({}),
     dashboard: z
       .object({
         /** Allow free-form commands from the dashboard (localhost + token only). */
@@ -128,3 +135,18 @@ export function describeTarget(target) {
 /** @typedef {z.infer<typeof pipeline>} Pipeline */
 /** @typedef {z.infer<typeof step>} Step */
 /** @typedef {z.infer<typeof site>} SiteParams */
+/** @typedef {z.infer<typeof param>} ParamDefinition */
+
+/**
+ * Defaults of the configured parameters, as {placeholder} values.
+ *
+ * @param {Config} config
+ * @returns {Record<string, string>}
+ */
+export function paramDefaults(config) {
+  return Object.fromEntries(
+    Object.entries(config.params).flatMap(([key, p]) =>
+      p.default === undefined ? [] : [[key, p.default]],
+    ),
+  );
+}

@@ -3,8 +3,8 @@ import { existsSync } from 'node:fs';
 import fastifyStatic from '@fastify/static';
 import websocket from '@fastify/websocket';
 import Fastify from 'fastify';
-import { isLocalTarget } from '@dops/core';
-import { RunConflictError, RunManager } from './runs.js';
+import { isLocalTarget, pipelineParams } from '@dops/core';
+import { MissingParamsError, RunConflictError, RunManager } from './runs.js';
 
 /**
  * @import { Config, Target, CommandExecutor, RunHistory } from '@dops/core'
@@ -68,6 +68,9 @@ export function buildServer({ config, history, connect, token, logger = false, s
     if (error instanceof RunConflictError) {
       return reply.code(409).send({ error: error.message });
     }
+    if (error instanceof MissingParamsError) {
+      return reply.code(400).send({ error: error.message, missing: error.missing });
+    }
     const status = error.statusCode ?? (/^Unknown /.test(error.message) ? 404 : 500);
     return reply.code(status).send({ error: error.message });
   });
@@ -110,7 +113,23 @@ export function buildServer({ config, history, connect, token, logger = false, s
       description: pipeline.description ?? null,
       targets: pipeline.targets,
       steps: pipeline.steps.map((step) => ({ name: step.name, run: step.run })),
+      params: pipelineParams(pipeline),
     })),
+  );
+
+  app.get('/api/params', async () =>
+    Object.entries(config.params).map(([name, param]) => ({
+      name,
+      description: param.description ?? null,
+      default: param.default ?? null,
+    })),
+  );
+
+  // Which {placeholders} each site fills in, so the dashboard only asks for the rest.
+  app.get('/api/site-params', async () =>
+    Object.fromEntries(
+      Object.entries(config.sites).map(([name, params]) => [name, Object.keys(params)]),
+    ),
   );
 
   app.get('/api/targets', async () =>
@@ -135,14 +154,16 @@ export function buildServer({ config, history, connect, token, logger = false, s
             pipeline: { type: 'string' },
             targets: { type: 'array', items: { type: 'string' } },
             site: { type: 'string' },
+            params: { type: 'object', additionalProperties: { type: 'string' } },
           },
         },
       },
     },
     async (request, reply) => {
-      const body = /** @type {{ pipeline: string, targets?: string[], site?: string }} */ (
-        request.body
-      );
+      const body =
+        /** @type {{ pipeline: string, targets?: string[], site?: string, params?: Record<string, string> }} */ (
+          request.body
+        );
       const { id } = await runs.start(body);
       return reply.code(202).send({ id });
     },
@@ -160,6 +181,7 @@ export function buildServer({ config, history, connect, token, logger = false, s
             command: { type: 'string', minLength: 1 },
             targets: { type: 'array', items: { type: 'string' }, minItems: 1 },
             site: { type: 'string' },
+            params: { type: 'object', additionalProperties: { type: 'string' } },
           },
         },
       },
@@ -168,9 +190,10 @@ export function buildServer({ config, history, connect, token, logger = false, s
       if (!config.dashboard.allowCommands) {
         return reply.code(403).send({ error: 'Commands are disabled (dashboard.allowCommands)' });
       }
-      const body = /** @type {{ command: string, targets: string[], site?: string }} */ (
-        request.body
-      );
+      const body =
+        /** @type {{ command: string, targets: string[], site?: string, params?: Record<string, string> }} */ (
+          request.body
+        );
       const { id } = await runs.command(body);
       return reply.code(202).send({ id });
     },

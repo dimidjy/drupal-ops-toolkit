@@ -46,6 +46,15 @@ sites:
     alias: '@fr'
     uri: fr.example.com
 
+# Values steps can use as {name}. Missing ones are asked for at run time
+# (dashboard form, or -p name=value on the command line).
+params:
+  branch:
+    description: Git branch to deploy
+    default: main
+  module:
+    description: Module machine name
+
 pipelines:
   cache-clear:
     description: Rebuild Drupal caches for one site
@@ -82,3 +91,12 @@ pipelines:
         run: ddev drush cim -y
       - name: Rebuild caches
         run: ddev drush cr
+
+  enable-module:
+    description: Enable a module and export the config change
+    targets: [staging]
+    steps:
+      - name: Enable
+        run: vendor/bin/drush {alias} en {module} -y
+      - name: Export configuration
+        run: vendor/bin/drush {alias} cex -y

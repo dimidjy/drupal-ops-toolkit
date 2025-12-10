@@ -6,6 +6,9 @@ import { RunHistory, parseConfig } from '@dops/core';
 import { createProgram } from '../src/program.js';
 
 const config = parseConfig(`
+params:
+  branch: { description: Git branch to deploy, default: main }
+  module: { description: Module to enable }
 sites:
   default: { alias: '@self' }
   fr: { alias: '@fr', uri: fr.example.com }
@@ -18,6 +21,14 @@ pipelines:
     targets: [web1, web2]
     steps:
       - { name: Cache, run: vendor/bin/drush cr }
+  checkout:
+    targets: [web1]
+    steps:
+      - { name: Checkout, run: 'git checkout {branch}' }
+  enable:
+    targets: [web1]
+    steps:
+      - { name: Enable, run: 'drush en {module} -y' }
   site-cache:
     targets: [web1]
     steps:
@@ -114,6 +125,16 @@ describe('dops CLI', () => {
     ]);
     expect(commands).toEqual(['web1: drush status', 'web2: drush status']);
     expect((await history.list())[0]?.pipeline).toBe('command');
+  });
+
+  it('fills parameters from defaults and --param', async () => {
+    expect((await run(['deploy', 'checkout'])).commands).toEqual(['web1: git checkout main']);
+    const { commands } = await run(['deploy', 'checkout', '-p', 'branch=release/2.4']);
+    expect(commands).toEqual(['web1: git checkout release/2.4']);
+  });
+
+  it('lists missing parameters with their description', async () => {
+    await expect(run(['deploy', 'enable'])).rejects.toThrow(/-p module=…\s+\(Module to enable\)/);
   });
 
   it('rejects unknown pipelines', async () => {

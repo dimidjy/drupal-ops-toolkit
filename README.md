@@ -23,6 +23,11 @@ skipped so a broken release never reaches every server.
 
 SSH uses your key file or agent. No passwords are stored in the config.
 
+Steps can use `{placeholders}`: target values (`{target}`, `{path}`), site
+values (`{alias}`) and parameters declared under `params` with a description
+and an optional default. Missing values are asked for before anything runs,
+as fields in the dashboard or with `-p branch=release/2.4` in the CLI.
+
 A target with `local: true` runs its steps in a shell on this machine, in its
 `path`. That's handy for local routines like `ddev drush cim` after switching
 branches, with the same history and live output as remote runs.

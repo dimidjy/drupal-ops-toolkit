@@ -4,6 +4,14 @@
  * @property {string | null} description
  * @property {string[]} targets
  * @property {{ name: string, run: string }[]} steps
+ * @property {string[]} params Placeholders the steps need besides target, environment and path.
+ */
+
+/**
+ * @typedef {object} ParamInfo
+ * @property {string} name
+ * @property {string | null} description
+ * @property {string | null} default
  */
 
 /**
@@ -65,13 +73,17 @@ export function createApi(token, base = '') {
     targets: () => request('/api/targets'),
     /** @returns {Promise<string[]>} */
     sites: () => request('/api/sites'),
+    /** @returns {Promise<ParamInfo[]>} */
+    params: () => request('/api/params'),
+    /** @returns {Promise<Record<string, string[]>>} */
+    siteParams: () => request('/api/site-params'),
     /**
-     * @param {{ pipeline: string, targets?: string[], site?: string }} body
+     * @param {{ pipeline: string, targets?: string[], site?: string, params?: Record<string, string> }} body
      * @returns {Promise<{ id: string }>}
      */
     startRun: (body) => request('/api/runs', { method: 'POST', body: JSON.stringify(body) }),
     /**
-     * @param {{ command: string, targets: string[], site?: string }} body
+     * @param {{ command: string, targets: string[], site?: string, params?: Record<string, string> }} body
      * @returns {Promise<{ id: string }>}
      */
     runCommand: (body) => request('/api/commands', { method: 'POST', body: JSON.stringify(body) }),

@@ -308,3 +308,17 @@ button.chip {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+.param-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin: 0.25rem 0;
+}
+
+.param-fields label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  font-size: 0.9em;
+}

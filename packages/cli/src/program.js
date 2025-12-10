@@ -6,6 +6,9 @@ import {
   RunHistory,
   describeTarget,
   loadConfig,
+  missingParams,
+  paramDefaults,
+  parseParamPairs,
   renderTemplate,
   sshConnector,
 } from '@dops/core';
@@ -74,11 +77,12 @@ export function createProgram(overrides = {}) {
     .argument('<pipeline>', 'pipeline name')
     .option('-t, --target <name...>', 'run on these targets instead of the pipeline defaults')
     .option('-s, --site <name>', 'site whose parameters fill the {placeholders}')
+    .option('-p, --param <key=value...>', 'values for {placeholders}, e.g. -p branch=release/2.4')
     .option('-n, --dry-run', 'print the commands without connecting anywhere')
     .action(
       async (
         pipelineName,
-        /** @type {{ target?: string[], site?: string, dryRun?: boolean }} */ options,
+        /** @type {{ target?: string[], site?: string, param?: string[], dryRun?: boolean }} */ options,
       ) => {
         const cfg = await config();
         const pipeline = cfg.pipelines[pipelineName];
@@ -90,6 +94,16 @@ export function createProgram(overrides = {}) {
           const params = cfg.sites[options.site];
           if (!params) throw new Error(`Unknown site "${options.site}"`);
           site = { name: options.site, params };
+        }
+        const values = parseParamPairs(options.param ?? []);
+        const defaults = paramDefaults(cfg);
+        const missing = missingParams(pipeline, defaults, site?.params ?? {}, values);
+        if (missing.length) {
+          const hints = missing.map((key) => {
+            const description = cfg.params[key]?.description;
+            return `  -p ${key}=…${description ? `  (${description})` : ''}`;
+          });
+          throw new Error(`Missing values for ${missing.join(', ')}:\n${hints.join('\n')}`);
         }
         const targetNames = options.target ?? pipeline.targets;
         /** @type {Record<string, Target>} */
@@ -107,7 +121,9 @@ export function createProgram(overrides = {}) {
               target: name,
               environment: target.environment ?? name,
               path: target.path,
+              ...defaults,
               ...(site ? { site: site.name, ...site.params } : {}),
+              ...values,
             };
             for (const step of pipeline.steps) {
               ctx.write(`  ${step.name}: ${renderTemplate(step.run, params)}\n`);
@@ -124,6 +140,8 @@ export function createProgram(overrides = {}) {
           pipeline,
           targets,
           ...(site ? { site } : {}),
+          defaults,
+          params: values,
           connect: ctx.connector(cfg),
         });
         await stopRecording();
@@ -139,10 +157,11 @@ export function createProgram(overrides = {}) {
     .argument('<command...>', 'command to run (quote it or put it after --)')
     .requiredOption('-t, --target <name...>', 'targets to run on')
     .option('-s, --site <name>', 'site whose parameters fill {placeholders}')
+    .option('-p, --param <key=value...>', 'values for {placeholders}')
     .action(
       async (
         /** @type {string[]} */ words,
-        /** @type {{ target: string[], site?: string }} */ options,
+        /** @type {{ target: string[], site?: string, param?: string[] }} */ options,
       ) => {
         const cfg = await config();
         const command = words.join(' ');
@@ -170,6 +189,8 @@ export function createProgram(overrides = {}) {
           },
           targets,
           ...(site ? { site } : {}),
+          defaults: paramDefaults(cfg),
+          params: parseParamPairs(options.param ?? []),
           connect: ctx.connector(cfg),
         });
         await stopRecording();
