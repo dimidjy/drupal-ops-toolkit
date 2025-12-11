@@ -4,6 +4,7 @@ import {
   DEFAULT_CONFIG_FILE,
   PipelineRunner,
   RunHistory,
+  Workspace,
   describeTarget,
   loadConfig,
   missingParams,
@@ -29,7 +30,12 @@ import { formatEvent } from './output.js';
 
 /** @type {Context} */
 export const defaultContext = {
-  loadConfig: (file) => loadConfig(file),
+  loadConfig: async (file) => {
+    const config = await loadConfig(file);
+    // Pipelines and parameters created in the dashboard work from the CLI too.
+    await Workspace.open(config.dashboard.workspaceFile, config);
+    return config;
+  },
   connector: (config) => sshConnector(config),
   history: (dir) => new RunHistory(dir),
   write: (text) => process.stdout.write(text),

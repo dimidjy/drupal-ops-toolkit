@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs';
 import fastifyStatic from '@fastify/static';
 import websocket from '@fastify/websocket';
 import Fastify from 'fastify';
-import { isLocalTarget, pipelineParams } from '@dops/core';
+import { Workspace, isLocalTarget, pipelineParams } from '@dops/core';
 import { MissingParamsError, RunConflictError, RunManager } from './runs.js';
 
 /**
@@ -19,6 +19,7 @@ import { MissingParamsError, RunConflictError, RunManager } from './runs.js';
  * @property {string} token Bearer token required on every /api request.
  * @property {boolean | object} [logger]
  * @property {string} [staticDir] Built dashboard to serve on /, if present.
+ * @property {Workspace} [workspace] Dashboard-made pipelines and parameters.
  */
 
 /**
@@ -41,7 +42,15 @@ function requestToken(request) {
 }
 
 /** @param {ServerOptions} options */
-export function buildServer({ config, history, connect, token, logger = false, staticDir }) {
+export function buildServer({
+  config,
+  history,
+  connect,
+  token,
+  logger = false,
+  staticDir,
+  workspace = new Workspace(config.dashboard.workspaceFile, config),
+}) {
   if (!token || token.length < 16) {
     throw new Error('A token of at least 16 characters is required');
   }
@@ -112,16 +121,41 @@ export function buildServer({ config, history, connect, token, logger = false, s
       name,
       description: pipeline.description ?? null,
       targets: pipeline.targets,
-      steps: pipeline.steps.map((step) => ({ name: step.name, run: step.run })),
+      steps: pipeline.steps,
       params: pipelineParams(pipeline),
+      source: workspace.ownsPipeline(name) ? 'dashboard' : 'config',
     })),
   );
+
+  app.put('/api/pipelines/:name', async (request) => {
+    const { name } = /** @type {{ name: string }} */ (request.params);
+    const pipeline = await workspace.savePipeline(name, request.body);
+    return { name, ...pipeline };
+  });
+
+  app.delete('/api/pipelines/:name', async (request, reply) => {
+    const { name } = /** @type {{ name: string }} */ (request.params);
+    await workspace.deletePipeline(name);
+    return reply.code(204).send();
+  });
+
+  app.put('/api/params/:name', async (request) => {
+    const { name } = /** @type {{ name: string }} */ (request.params);
+    return { name, ...(await workspace.saveParam(name, request.body)) };
+  });
+
+  app.delete('/api/params/:name', async (request, reply) => {
+    const { name } = /** @type {{ name: string }} */ (request.params);
+    await workspace.deleteParam(name);
+    return reply.code(204).send();
+  });
 
   app.get('/api/params', async () =>
     Object.entries(config.params).map(([name, param]) => ({
       name,
       description: param.description ?? null,
       default: param.default ?? null,
+      source: workspace.ownsParam(name) ? 'dashboard' : 'config',
     })),
   );
 

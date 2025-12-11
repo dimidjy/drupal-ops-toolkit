@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-const name = z
+export const name = z
   .string()
   .regex(/^[a-z0-9][a-z0-9_-]*$/, 'use lowercase letters, digits, "-" and "_"');
 
@@ -47,7 +47,7 @@ const step = z.object({
   timeoutSeconds: z.number().int().positive().default(600),
 });
 
-const pipeline = z.object({
+export const pipelineSchema = z.object({
   description: z.string().optional(),
   /** Targets the pipeline runs on unless overridden on the command line. */
   targets: z.array(name).min(1),
@@ -57,8 +57,12 @@ const pipeline = z.object({
 /** Per-site values available to steps as {placeholders}. */
 const site = z.record(z.string(), z.union([z.string(), z.number(), z.boolean()]));
 
+export const paramName = z
+  .string()
+  .regex(/^[a-zA-Z_][a-zA-Z0-9_]*$/, 'letters, digits and "_", not starting with a digit');
+
 /** A value steps can use as {name}; asked for at run time when not given. */
-const param = z.object({
+export const paramSchema = z.object({
   description: z.string().optional(),
   default: z.string().optional(),
 });
@@ -68,12 +72,14 @@ export const configSchema = z
     bastions: z.record(name, bastion).default({}),
     targets: z.record(name, target).default({}),
     sites: z.record(name, site).default({}),
-    pipelines: z.record(name, pipeline).default({}),
-    params: z.record(z.string().regex(/^[a-zA-Z_][a-zA-Z0-9_]*$/), param).default({}),
+    pipelines: z.record(name, pipelineSchema).default({}),
+    params: z.record(paramName, paramSchema).default({}),
     dashboard: z
       .object({
         /** Allow free-form commands from the dashboard (localhost + token only). */
         allowCommands: z.boolean().default(true),
+        /** Pipelines and parameters created in the dashboard. */
+        workspaceFile: z.string().default('.dops/workspace.json'),
       })
       .default({}),
   })
@@ -132,10 +138,10 @@ export function describeTarget(target) {
     ? `local:${target.path}`
     : `${target.user}@${target.host}:${target.path}`;
 }
-/** @typedef {z.infer<typeof pipeline>} Pipeline */
+/** @typedef {z.infer<typeof pipelineSchema>} Pipeline */
 /** @typedef {z.infer<typeof step>} Step */
 /** @typedef {z.infer<typeof site>} SiteParams */
-/** @typedef {z.infer<typeof param>} ParamDefinition */
+/** @typedef {z.infer<typeof paramSchema>} ParamDefinition */
 
 /**
  * Defaults of the configured parameters, as {placeholder} values.

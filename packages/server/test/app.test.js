@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import WebSocket from 'ws';
-import { RunHistory, parseConfig } from '@dops/core';
+import { RunHistory, Workspace, parseConfig } from '@dops/core';
 import { buildServer } from '../src/app.js';
 import { startServer } from '../src/start.js';
 
@@ -237,7 +237,12 @@ describe('dashboard API', () => {
     const pipelines = (await app.inject({ url: '/api/pipelines', headers: auth })).json();
     expect(pipelines.find((p) => p.name === 'enable').params).toEqual(['branch', 'module']);
     const params = (await app.inject({ url: '/api/params', headers: auth })).json();
-    expect(params[0]).toEqual({ name: 'branch', description: 'Branch', default: 'main' });
+    expect(params[0]).toEqual({
+      name: 'branch',
+      description: 'Branch',
+      default: 'main',
+      source: 'config',
+    });
 
     const start = (payload) =>
       app.inject({ method: 'POST', url: '/api/runs', headers: auth, payload });
@@ -251,5 +256,36 @@ describe('dashboard API', () => {
     ).toBe(202);
     await waitFor(async () => (await history.list())[0]);
     expect(commands).toEqual(['web1: git checkout main && drush en admin_toolbar']);
+  });
+
+  it('creates, edits and deletes dashboard pipelines and parameters', async () => {
+    const ownConfig = structuredClone(config);
+    const file = join(await mkdtemp(join(tmpdir(), 'dops-ws-')), 'workspace.json');
+    const app = buildServer({
+      config: ownConfig,
+      history: new RunHistory(await mkdtemp(join(tmpdir(), 'dops-server-'))),
+      token: TOKEN,
+      connect: async () => ({ exec: async () => ({ code: 0 }), close: async () => {} }),
+      workspace: await Workspace.open(file, ownConfig),
+    });
+    const put = (url, payload) => app.inject({ method: 'PUT', url, headers: auth, payload });
+
+    const saved = await put('/api/pipelines/status', {
+      description: 'Drush status',
+      targets: ['web1'],
+      steps: [{ name: 'Status', run: 'drush {alias} status' }],
+    });
+    expect(saved.statusCode).toBe(200);
+    const listed = (await app.inject({ url: '/api/pipelines', headers: auth })).json();
+    expect(listed.find((p) => p.name === 'status')).toMatchObject({
+      source: 'dashboard',
+      params: ['alias'],
+    });
+    expect((await put('/api/pipelines/cache-clear', saved.json())).statusCode).toBe(400);
+    expect((await put('/api/params/ticket', { description: 'Jira key' })).statusCode).toBe(200);
+
+    const del = (url) => app.inject({ method: 'DELETE', url, headers: auth });
+    expect((await del('/api/pipelines/status')).statusCode).toBe(204);
+    expect((await del('/api/params/branch')).statusCode).toBe(400);
   });
 });
