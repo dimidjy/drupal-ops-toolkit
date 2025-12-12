@@ -45,3 +45,9 @@ any one-off command (`drush status`, `tail -n 50 …/php-error.log`) on the
 ticked servers, and the Local tab does the same on this machine. It only listens on
 localhost and every API call needs a token (`DOPS_TOKEN`, or the one printed
 on start). Exposing it on another interface requires `DOPS_ALLOW_REMOTE=1`.
+
+Pipelines and parameters can also be created in the dashboard (Editor and
+Parameters tabs) from templates such as "Drupal deploy" or "Deploy with
+maintenance". They are saved to `.dops/workspace.json` (`dashboard.workspaceFile`)
+and work from the CLI too; the ones in `dops.config.yml` stay read-only and
+can be duplicated.

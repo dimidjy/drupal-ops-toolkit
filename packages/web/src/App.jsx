@@ -1,10 +1,12 @@
 import { useState } from 'react';
 import { History } from './components/History.jsx';
+import { Params } from './components/Params.jsx';
+import { PipelineEditor } from './components/PipelineEditor.jsx';
 import { Pipelines } from './components/Pipelines.jsx';
 import { RunView } from './components/RunView.jsx';
 import { TokenGate } from './components/TokenGate.jsx';
 
-const TABS = /** @type {const} */ (['Pipelines', 'Local', 'History']);
+const TABS = /** @type {const} */ (['Pipelines', 'Local', 'Editor', 'Parameters', 'History']);
 
 /**
  * @param {{ api: import('./api.js').Api, logout: () => void }} props
@@ -42,6 +44,10 @@ function Dashboard({ api, logout }) {
           <Pipelines api={api} onStarted={setRunId} />
         ) : tab === 'Local' ? (
           <Pipelines key="local" api={api} onStarted={setRunId} scope="local" />
+        ) : tab === 'Editor' ? (
+          <PipelineEditor api={api} />
+        ) : tab === 'Parameters' ? (
+          <Params api={api} />
         ) : (
           <History api={api} onOpen={setRunId} />
         )}

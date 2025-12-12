@@ -322,3 +322,69 @@ button.chip {
   gap: 0.15rem;
   font-size: 0.9em;
 }
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  margin: 0.4rem 0;
+}
+
+.field > span {
+  font-weight: 600;
+  font-size: 0.9em;
+}
+
+.field.grow {
+  flex: 1;
+}
+
+.editor .card {
+  gap: 0.5rem;
+}
+
+.step-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding-left: 1.25rem;
+  margin: 0.25rem 0;
+}
+
+.step-editor li {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.step-editor .actions {
+  margin-left: auto;
+  display: flex;
+  gap: 0.6rem;
+}
+
+input.narrow {
+  width: 5rem;
+}
+
+button.secondary {
+  background: none;
+  color: var(--accent);
+}
+
+.danger-text,
+button.link.danger-text {
+  color: var(--fail);
+}
+
+.ok-text {
+  color: var(--ok);
+}
+
+td.actions {
+  white-space: nowrap;
+}
+
+td.actions button + button {
+  margin-left: 0.75rem;
+}

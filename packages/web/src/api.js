@@ -3,8 +3,17 @@
  * @property {string} name
  * @property {string | null} description
  * @property {string[]} targets
- * @property {{ name: string, run: string }[]} steps
+ * @property {StepInfo[]} steps
  * @property {string[]} params Placeholders the steps need besides target, environment and path.
+ * @property {'config' | 'dashboard'} source Dashboard pipelines can be edited here.
+ */
+
+/**
+ * @typedef {object} StepInfo
+ * @property {string} name
+ * @property {string} run
+ * @property {boolean} [continueOnError]
+ * @property {number} [timeoutSeconds]
  */
 
 /**
@@ -12,6 +21,7 @@
  * @property {string} name
  * @property {string | null} description
  * @property {string | null} default
+ * @property {'config' | 'dashboard'} [source]
  */
 
 /**
@@ -56,6 +66,7 @@ export function createApi(token, base = '') {
         ...init.headers,
       },
     });
+    if (response.status === 204) return /** @type {T} */ (undefined);
     if (!response.ok) {
       const body = /** @type {{ error?: string }} */ (await response.json().catch(() => ({})));
       throw new ApiError(response.status, body.error ?? response.statusText);
@@ -75,6 +86,29 @@ export function createApi(token, base = '') {
     sites: () => request('/api/sites'),
     /** @returns {Promise<ParamInfo[]>} */
     params: () => request('/api/params'),
+    /**
+     * @param {string} name
+     * @param {{ description?: string, targets: string[], steps: StepInfo[] }} pipeline
+     */
+    savePipeline: (name, pipeline) =>
+      request(`/api/pipelines/${encodeURIComponent(name)}`, {
+        method: 'PUT',
+        body: JSON.stringify(pipeline),
+      }),
+    /** @param {string} name */
+    deletePipeline: (name) =>
+      request(`/api/pipelines/${encodeURIComponent(name)}`, { method: 'DELETE' }),
+    /**
+     * @param {string} name
+     * @param {{ description?: string, default?: string }} param
+     */
+    saveParam: (name, param) =>
+      request(`/api/params/${encodeURIComponent(name)}`, {
+        method: 'PUT',
+        body: JSON.stringify(param),
+      }),
+    /** @param {string} name */
+    deleteParam: (name) => request(`/api/params/${encodeURIComponent(name)}`, { method: 'DELETE' }),
     /** @returns {Promise<Record<string, string[]>>} */
     siteParams: () => request('/api/site-params'),
     /**
