@@ -54,6 +54,26 @@ export const pipelineSchema = z.object({
   steps: z.array(step).min(1),
 });
 
+const urlSet = z.object({
+  baseUrl: z.string().url(),
+  paths: z.array(z.string().startsWith('/')).min(1),
+});
+
+const visual = z.object({
+  outputDir: z.string().default('.dops/visual'),
+  viewport: z
+    .object({ width: z.number().int().positive(), height: z.number().int().positive() })
+    .default({ width: 1440, height: 900 }),
+  fullPage: z.boolean().default(true),
+  /** pixelmatch colour threshold per pixel (0..1). */
+  threshold: z.number().min(0).max(1).default(0.1),
+  /** A page counts as changed when more than this share of pixels differs. */
+  maxDiffRatio: z.number().min(0).max(1).default(0.001),
+  /** CSS selectors hidden before the screenshot (carousels, timestamps…). */
+  hide: z.array(z.string()).default([]),
+  urlSets: z.record(name, urlSet).default({}),
+});
+
 /** Per-site values available to steps as {placeholders}. */
 const site = z.record(z.string(), z.union([z.string(), z.number(), z.boolean()]));
 
@@ -74,6 +94,7 @@ export const configSchema = z
     sites: z.record(name, site).default({}),
     pipelines: z.record(name, pipelineSchema).default({}),
     params: z.record(paramName, paramSchema).default({}),
+    visual: visual.default({}),
     dashboard: z
       .object({
         /** Allow free-form commands from the dashboard (localhost + token only). */
@@ -156,3 +177,5 @@ export function paramDefaults(config) {
     ),
   );
 }
+/** @typedef {z.infer<typeof visual>} VisualConfig */
+/** @typedef {z.infer<typeof urlSet>} UrlSet */

@@ -14,6 +14,8 @@ import {
   sshConnector,
 } from '@dops/core';
 import { startServer } from '@dops/server';
+import { join } from 'node:path';
+import { captureSet } from '@dops/visual';
 import { formatEvent } from './output.js';
 
 /** @import { Config, Target, CommandExecutor } from '@dops/core' */
@@ -215,6 +217,30 @@ export function createProgram(overrides = {}) {
         host: options.host,
         port: Number(options.port),
       });
+    });
+
+  const visual = program.command('visual').description('screenshot pages and compare them');
+
+  visual
+    .command('capture')
+    .description('screenshot every page of a URL set')
+    .argument('<set>', 'URL set from visual.urlSets')
+    .option('-l, --label <label>', 'name of this capture, e.g. before or after', 'before')
+    .action(async (setName, /** @type {{ label: string }} */ options) => {
+      const cfg = await config();
+      const urlSet = cfg.visual.urlSets[setName];
+      if (!urlSet) throw new Error(`Unknown URL set "${setName}"`);
+      const outDir = join(cfg.visual.outputDir, setName, options.label);
+      ctx.write(`${pc.bold(`Capturing ${urlSet.paths.length} pages`)} → ${outDir}\n`);
+      const results = await captureSet(urlSet, outDir, cfg.visual, (result) => {
+        const status = result.error
+          ? pc.red(result.error.split('\n')[0] ?? 'error')
+          : result.status >= 400
+            ? pc.yellow(String(result.status))
+            : pc.green(String(result.status));
+        ctx.write(`  ${status} ${result.path}\n`);
+      });
+      if (results.some((result) => result.error)) process.exitCode = 1;
     });
 
   const history = program.command('history').description('show previous runs');
