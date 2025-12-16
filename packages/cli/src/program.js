@@ -1,3 +1,4 @@
+import { join } from 'node:path';
 import { Command } from 'commander';
 import pc from 'picocolors';
 import {
@@ -14,8 +15,7 @@ import {
   sshConnector,
 } from '@dops/core';
 import { startServer } from '@dops/server';
-import { join } from 'node:path';
-import { captureSet } from '@dops/visual';
+import { captureSet, compareDirs } from '@dops/visual';
 import { formatEvent } from './output.js';
 
 /** @import { Config, Target, CommandExecutor } from '@dops/core' */
@@ -241,6 +241,40 @@ export function createProgram(overrides = {}) {
         ctx.write(`  ${status} ${result.path}\n`);
       });
       if (results.some((result) => result.error)) process.exitCode = 1;
+    });
+
+  visual
+    .command('compare')
+    .description('diff two captures of a URL set')
+    .argument('<set>', 'URL set from visual.urlSets')
+    .option('--before <label>', 'baseline capture', 'before')
+    .option('--after <label>', 'capture to check', 'after')
+    .action(async (setName, /** @type {{ before: string, after: string }} */ options) => {
+      const cfg = await config();
+      if (!cfg.visual.urlSets[setName]) throw new Error(`Unknown URL set "${setName}"`);
+      const dir = join(cfg.visual.outputDir, setName);
+      const results = await compareDirs(
+        {
+          beforeDir: join(dir, options.before),
+          afterDir: join(dir, options.after),
+          diffDir: join(dir, `diff-${options.before}-${options.after}`),
+        },
+        cfg.visual,
+      );
+      if (!results.length) throw new Error(`No screenshots found in ${dir}`);
+      for (const result of results) {
+        const label = {
+          same: pc.green('same   '),
+          changed: pc.red('changed'),
+          added: pc.yellow('added  '),
+          removed: pc.yellow('removed'),
+        }[result.status];
+        const ratio = result.diffFile ? pc.dim(` ${(result.ratio * 100).toFixed(2)}%`) : '';
+        ctx.write(`  ${label} ${result.name}${ratio}\n`);
+      }
+      const changed = results.filter((result) => result.status !== 'same').length;
+      ctx.write(`\n${changed} of ${results.length} pages differ\n`);
+      if (changed) process.exitCode = 1;
     });
 
   const history = program.command('history').description('show previous runs');
