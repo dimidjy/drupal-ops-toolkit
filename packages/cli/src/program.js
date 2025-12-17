@@ -15,7 +15,7 @@ import {
   sshConnector,
 } from '@dops/core';
 import { startServer } from '@dops/server';
-import { captureSet, compareDirs } from '@dops/visual';
+import { captureSet, compareDirs, writeReport } from '@dops/visual';
 import { formatEvent } from './output.js';
 
 /** @import { Config, Target, CommandExecutor } from '@dops/core' */
@@ -253,12 +253,11 @@ export function createProgram(overrides = {}) {
       const cfg = await config();
       if (!cfg.visual.urlSets[setName]) throw new Error(`Unknown URL set "${setName}"`);
       const dir = join(cfg.visual.outputDir, setName);
+      const beforeDir = join(dir, options.before);
+      const afterDir = join(dir, options.after);
+      const pair = `${options.before}-${options.after}`;
       const results = await compareDirs(
-        {
-          beforeDir: join(dir, options.before),
-          afterDir: join(dir, options.after),
-          diffDir: join(dir, `diff-${options.before}-${options.after}`),
-        },
+        { beforeDir, afterDir, diffDir: join(dir, `diff-${pair}`) },
         cfg.visual,
       );
       if (!results.length) throw new Error(`No screenshots found in ${dir}`);
@@ -273,7 +272,18 @@ export function createProgram(overrides = {}) {
         ctx.write(`  ${label} ${result.name}${ratio}\n`);
       }
       const changed = results.filter((result) => result.status !== 'same').length;
-      ctx.write(`\n${changed} of ${results.length} pages differ\n`);
+      const report = await writeReport(
+        {
+          title: `Visual diff · ${setName}`,
+          beforeDir,
+          afterDir,
+          beforeLabel: options.before,
+          afterLabel: options.after,
+          results,
+        },
+        join(dir, `report-${pair}.html`),
+      );
+      ctx.write(`\n${changed} of ${results.length} pages differ · report: ${report}\n`);
       if (changed) process.exitCode = 1;
     });
 
