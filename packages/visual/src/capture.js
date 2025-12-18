@@ -19,6 +19,24 @@ export function screenshotName(path) {
 }
 
 /**
+ * Resolves basic auth credentials of a URL set from the environment.
+ *
+ * @param {UrlSet} urlSet
+ * @param {NodeJS.ProcessEnv} env
+ * @returns {{ username: string, password: string } | undefined}
+ */
+export function httpCredentials(urlSet, env) {
+  if (!urlSet.httpAuth) return undefined;
+  const { usernameEnv, passwordEnv } = urlSet.httpAuth;
+  const username = env[usernameEnv];
+  const password = env[passwordEnv];
+  if (!username || !password) {
+    throw new Error(`Basic auth needs ${usernameEnv} and ${passwordEnv} to be set`);
+  }
+  return { username, password };
+}
+
+/**
  * @typedef {object} CaptureResult
  * @property {string} path
  * @property {string} file
@@ -33,9 +51,11 @@ export function screenshotName(path) {
  * @param {string} outDir
  * @param {Pick<VisualConfig, 'viewport' | 'fullPage' | 'hide'>} options
  * @param {(result: CaptureResult) => void} [onPage]
+ * @param {NodeJS.ProcessEnv} [env]
  * @returns {Promise<CaptureResult[]>}
  */
-export async function captureSet(urlSet, outDir, options, onPage) {
+export async function captureSet(urlSet, outDir, options, onPage, env = process.env) {
+  const credentials = httpCredentials(urlSet, env);
   await mkdir(outDir, { recursive: true });
   const browser = await chromium.launch();
   try {
@@ -43,6 +63,9 @@ export async function captureSet(urlSet, outDir, options, onPage) {
       viewport: options.viewport,
       ignoreHTTPSErrors: true,
       reducedMotion: 'reduce',
+      ...(credentials
+        ? { httpCredentials: { ...credentials, origin: new URL(urlSet.baseUrl).origin } }
+        : {}),
     });
     const page = await context.newPage();
     /** @type {CaptureResult[]} */
