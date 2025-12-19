@@ -100,3 +100,20 @@ pipelines:
         run: vendor/bin/drush {alias} en {module} -y
       - name: Export configuration
         run: vendor/bin/drush {alias} cex -y
+
+visual:
+  outputDir: .dops/visual
+  viewport: { width: 1440, height: 900 }
+  threshold: 0.1 # per-pixel colour tolerance
+  maxDiffRatio: 0.001 # page counts as changed above 0.1 % differing pixels
+  hide: ['.messages', '.views-slideshow'] # dynamic bits that would always differ
+  urlSets:
+    demo:
+      baseUrl: https://hdcr.ddev.site
+      paths: [/, /user/login, /user/password]
+    staging:
+      baseUrl: https://staging.example.com
+      paths: [/, /products, /cart]
+      httpAuth:
+        usernameEnv: STAGING_HTTP_USER
+        passwordEnv: STAGING_HTTP_PASS

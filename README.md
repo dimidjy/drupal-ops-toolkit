@@ -51,3 +51,21 @@ Parameters tabs) from templates such as "Drupal deploy" or "Deploy with
 maintenance". They are saved to `.dops/workspace.json` (`dashboard.workspaceFile`)
 and work from the CLI too; the ones in `dops.config.yml` stay read-only and
 can be duplicated.
+
+## Visual checks
+
+Screenshot a list of pages before a release, again after it, and get a pixel
+diff with an HTML report:
+
+```bash
+npx dops visual capture staging --label before
+npx dops deploy deploy
+npx dops visual capture staging --label after
+npx dops visual compare staging      # exit code 1 when pages differ
+```
+
+The report (`.dops/visual/<set>/report-before-after.html`) shows changed pages
+first with before, after and diff images side by side. Dynamic elements such
+as status messages or sliders can be hidden with `visual.hide` selectors.
+Environments behind basic auth read their credentials from the env variables
+named in `httpAuth`.
