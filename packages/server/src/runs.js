@@ -7,9 +7,13 @@ import { PipelineRunner, assertParamValues, missingParams, paramDefaults } from 
  */
 
 export class RunConflictError extends Error {
-  /** @param {string[]} targets */
-  constructor(targets) {
-    super(`A run is already in progress on ${targets.join(', ')}`);
+  /** @param {string[] | string} targetsOrMessage Busy targets, or a full message. */
+  constructor(targetsOrMessage) {
+    super(
+      typeof targetsOrMessage === 'string'
+        ? targetsOrMessage
+        : `A run is already in progress on ${targetsOrMessage.join(', ')}`,
+    );
     this.name = 'RunConflictError';
   }
 }

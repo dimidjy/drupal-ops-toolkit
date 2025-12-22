@@ -1,4 +1,4 @@
-import { mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -10,7 +10,11 @@ import { startServer } from '../src/start.js';
 const TOKEN = 'test-token-0123456789';
 const auth = { authorization: `Bearer ${TOKEN}` };
 
+const outputRoot = await mkdtemp(join(tmpdir(), 'dops-server-out-'));
+
 const config = parseConfig(`
+visual:
+  outputDir: ${join(outputRoot, 'visual')}
 params:
   branch: { description: Branch, default: main }
   module: { description: Module to enable }
@@ -287,5 +291,41 @@ describe('dashboard API', () => {
     const del = (url) => app.inject({ method: 'DELETE', url, headers: auth });
     expect((await del('/api/pipelines/status')).statusCode).toBe(204);
     expect((await del('/api/params/branch')).statusCode).toBe(400);
+  });
+
+  it('sets a session cookie that also unlocks screenshot files', async () => {
+    const { app } = await setup();
+    const dir = join(outputRoot, 'visual', 'workspace', 'before');
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, 'a.png'), 'png-bytes');
+
+    expect((await app.inject({ url: '/files/visual/before/a.png' })).statusCode).toBe(401);
+    const session = await app.inject({ method: 'POST', url: '/api/session', headers: auth });
+    const cookie = String(session.headers['set-cookie']);
+    expect(cookie).toContain('HttpOnly');
+    const file = await app.inject({
+      url: '/files/visual/before/a.png',
+      headers: { cookie: cookie.split(';')[0] },
+    });
+    expect(file.body).toBe('png-bytes');
+  });
+
+  it('validates workspace captures and reports an empty comparison', async () => {
+    const { app } = await setup();
+    const capture = (payload) =>
+      app.inject({ method: 'POST', url: '/api/visual/workspace/capture', headers: auth, payload });
+    expect((await capture({ phase: 'during', urls: ['https://a.test/'] })).statusCode).toBe(400);
+    expect((await capture({ phase: 'before', urls: ['ftp://a.test/'] })).statusCode).toBe(400);
+    expect((await capture({ phase: 'before', urls: [] })).statusCode).toBe(400);
+
+    const state = (await app.inject({ url: '/api/visual/workspace', headers: auth })).json();
+    expect(state.job).toBeNull();
+    const compared = await app.inject({
+      method: 'POST',
+      url: '/api/visual/workspace/compare',
+      headers: auth,
+      payload: { start: 0, limit: 20 },
+    });
+    expect(compared.json()).toMatchObject({ total: 0, done: true, results: [] });
   });
 });

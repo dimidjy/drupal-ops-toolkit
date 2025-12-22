@@ -1,10 +1,12 @@
 import { timingSafeEqual } from 'node:crypto';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
+import { resolve } from 'node:path';
 import fastifyStatic from '@fastify/static';
 import websocket from '@fastify/websocket';
 import Fastify from 'fastify';
 import { Workspace, isLocalTarget, pipelineParams } from '@dops/core';
 import { MissingParamsError, RunConflictError, RunManager } from './runs.js';
+import { VisualJobs } from './visual.js';
 
 /**
  * @import { Config, Target, CommandExecutor, RunHistory } from '@dops/core'
@@ -32,10 +34,18 @@ function sameToken(given, expected) {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
+const COOKIE = 'dops_token';
+
 /** @param {FastifyRequest} request */
 function requestToken(request) {
   const header = request.headers.authorization ?? '';
   if (header.startsWith('Bearer ')) return header.slice('Bearer '.length);
+  // Set by POST /api/session so that plain links and <img> tags are authenticated too.
+  const cookie = (request.headers.cookie ?? '')
+    .split(';')
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(`${COOKIE}=`));
+  if (cookie) return cookie.slice(COOKIE.length + 1);
   // Browsers cannot set headers on WebSocket connections.
   const query = /** @type {{ token?: string }} */ (request.query);
   return query.token ?? '';
@@ -68,7 +78,8 @@ export function buildServer({
     // WebSocket upgrades authenticate in their handler: a rejected upgrade socket
     // is not tracked by the HTTP server and would block shutdown.
     if (request.headers.upgrade === 'websocket') return;
-    if (request.url.startsWith('/api/') && !sameToken(requestToken(request), token)) {
+    const protectedPath = request.url.startsWith('/api/') || request.url.startsWith('/files/');
+    if (protectedPath && !sameToken(requestToken(request), token)) {
       return reply.code(401).send({ error: 'Unauthorized' });
     }
   });
@@ -115,6 +126,17 @@ export function buildServer({
       socket.on('close', () => runs.off('event', forward));
     });
   });
+
+  app.post('/api/session', async (_request, reply) =>
+    reply
+      .header('set-cookie', `${COOKIE}=${token}; Path=/; HttpOnly; SameSite=Strict`)
+      .code(204)
+      .send(),
+  );
+
+  app.delete('/api/session', async (_request, reply) =>
+    reply.header('set-cookie', `${COOKIE}=; Path=/; HttpOnly; Max-Age=0`).code(204).send(),
+  );
 
   app.get('/api/pipelines', async () =>
     Object.entries(config.pipelines).map(([name, pipeline]) => ({
@@ -273,11 +295,122 @@ export function buildServer({
       : reply.code(404).send({ error: 'No active run with this id' });
   });
 
+  const visualJobs = new VisualJobs(config.visual);
+
+  app.get('/api/visual/workspace', async () => ({
+    job: visualJobs.job,
+    counts: await visualJobs.workspace.counts(),
+  }));
+
+  app.post(
+    '/api/visual/workspace/capture',
+    {
+      schema: {
+        body: {
+          type: 'object',
+          required: ['phase', 'urls'],
+          additionalProperties: false,
+          properties: {
+            phase: { enum: ['before', 'after'] },
+            urls: {
+              type: 'array',
+              items: { type: 'string', pattern: '^https?://' },
+              maxItems: 2000,
+            },
+            viewport: {
+              type: 'object',
+              required: ['width', 'height'],
+              properties: {
+                width: { type: 'integer', minimum: 200, maximum: 3840 },
+                height: { type: 'integer', minimum: 200, maximum: 4000 },
+              },
+            },
+            fullPage: { type: 'boolean' },
+            settleMs: { type: 'integer', minimum: 0, maximum: 30000 },
+            blockTrackers: { type: 'boolean' },
+            auth: {
+              type: 'object',
+              required: ['username', 'password'],
+              properties: { username: { type: 'string' }, password: { type: 'string' } },
+            },
+            cookies: {
+              type: 'array',
+              items: {
+                type: 'object',
+                required: ['name', 'value'],
+                properties: {
+                  name: { type: 'string' },
+                  value: { type: 'string' },
+                  domain: { type: 'string' },
+                  path: { type: 'string' },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const body = /** @type {{ phase: 'before' | 'after', urls: string[],
+        viewport?: { width: number, height: number }, fullPage?: boolean, settleMs?: number,
+        blockTrackers?: boolean, auth?: { username: string, password: string },
+        cookies?: { name: string, value: string, domain?: string, path?: string }[] }} */ (
+        request.body
+      );
+      const job = visualJobs.start(body.phase, [...new Set(body.urls)], {
+        viewport: body.viewport ?? config.visual.viewport,
+        fullPage: body.fullPage ?? config.visual.fullPage,
+        settleMs: body.settleMs ?? 600,
+        blockTrackers: body.blockTrackers ?? true,
+        ...(body.auth?.username ? { credentials: body.auth } : {}),
+        ...(body.cookies?.length ? { cookies: body.cookies } : {}),
+      });
+      return reply.code(202).send(job);
+    },
+  );
+
+  app.post('/api/visual/workspace/cancel', async () => ({ cancelled: visualJobs.cancel() }));
+
+  app.post('/api/visual/workspace/compare', async (request) => {
+    const body = /** @type {{ start?: number, limit?: number }} */ (request.body ?? {});
+    const result = await visualJobs.compare({
+      start: Math.max(0, Number(body.start ?? 0)),
+      limit: Math.min(100, Math.max(1, Number(body.limit ?? 20))),
+    });
+    /** @param {string} phase @param {string} file */
+    const url = (phase, file) => `/files/visual/${phase}/${encodeURIComponent(file)}`;
+    return {
+      ...result,
+      results: result.results.map((item) => ({
+        ...item,
+        beforeImage: url('before', item.file),
+        afterImage: url('after', item.file),
+        ...(item.status === 'different'
+          ? { diffImage: `${url('diff', item.file)}?v=${Date.now()}` }
+          : {}),
+      })),
+    };
+  });
+
+  app.delete('/api/visual/workspace', async (_request, reply) => {
+    await visualJobs.clear();
+    return reply.code(204).send();
+  });
+
+  const workspaceDir = resolve(visualJobs.workspace.dir);
+  mkdirSync(workspaceDir, { recursive: true });
+  app.register(fastifyStatic, {
+    root: workspaceDir,
+    prefix: '/files/visual/',
+    decorateReply: false,
+    index: false,
+  });
+
   if (staticDir && existsSync(staticDir)) {
     app.register(fastifyStatic, { root: staticDir });
     // Client-side routes: serve index.html for anything that is not the API.
     app.setNotFoundHandler((request, reply) =>
-      request.method === 'GET' && !request.url.startsWith('/api/')
+      request.method === 'GET' && !/^\/(api|files)\//.test(request.url)
         ? reply.sendFile('index.html')
         : reply.code(404).send({ error: 'Not found' }),
     );
