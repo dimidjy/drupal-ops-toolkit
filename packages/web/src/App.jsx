@@ -5,8 +5,16 @@ import { PipelineEditor } from './components/PipelineEditor.jsx';
 import { Pipelines } from './components/Pipelines.jsx';
 import { RunView } from './components/RunView.jsx';
 import { TokenGate } from './components/TokenGate.jsx';
+import { VisualTesting } from './components/VisualTesting.jsx';
 
-const TABS = /** @type {const} */ (['Pipelines', 'Local', 'Editor', 'Parameters', 'History']);
+const TABS = /** @type {const} */ ([
+  'Pipelines',
+  'Local',
+  'Editor',
+  'Parameters',
+  'Visual',
+  'History',
+]);
 
 /**
  * @param {{ api: import('./api.js').Api, logout: () => void }} props
@@ -48,6 +56,8 @@ function Dashboard({ api, logout }) {
           <PipelineEditor api={api} />
         ) : tab === 'Parameters' ? (
           <Params api={api} />
+        ) : tab === 'Visual' ? (
+          <VisualTesting api={api} />
         ) : (
           <History api={api} onOpen={setRunId} />
         )}

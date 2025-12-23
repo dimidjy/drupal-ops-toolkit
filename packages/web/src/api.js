@@ -31,6 +31,43 @@
  * @property {string} host
  */
 
+/**
+ * @typedef {object} CaptureJobInfo
+ * @property {'before' | 'after'} phase
+ * @property {'running' | 'done' | 'failed' | 'cancelled'} status
+ * @property {number} total
+ * @property {{ url: string, status: number, error?: string }[]} pages
+ * @property {string} startedAt
+ * @property {string} [finishedAt]
+ * @property {string} [error]
+ */
+
+/**
+ * @typedef {object} VisualDiffInfo
+ * @property {string} url
+ * @property {'different' | 'error'} status
+ * @property {number} [diffPercent]
+ * @property {boolean} [sizeMismatch]
+ * @property {{ width: number, height: number }} [dimensionDifference]
+ * @property {string} [message]
+ * @property {string} beforeImage
+ * @property {string} afterImage
+ * @property {string} [diffImage]
+ * @property {string} [beforeCapturedAt]
+ * @property {string} [afterCapturedAt]
+ */
+
+/**
+ * @typedef {object} CompareInfo
+ * @property {number} nextStart
+ * @property {number} total
+ * @property {number} identicalSkipped
+ * @property {boolean} done
+ * @property {number} onlyBefore
+ * @property {number} onlyAfter
+ * @property {VisualDiffInfo[]} results
+ */
+
 export class ApiError extends Error {
   /**
    * @param {number} status
@@ -130,6 +167,29 @@ export function createApi(token, base = '') {
      * @returns {Promise<string>}
      */
     runLog: (id) => request(`/api/runs/${id}/log`),
+    /** Sets the HttpOnly cookie that lets <img> tags load screenshots. */
+    startSession: () => request('/api/session', { method: 'POST' }),
+    endSession: () => request('/api/session', { method: 'DELETE' }),
+    /** @returns {Promise<{ job: CaptureJobInfo | null, counts: { before: number, after: number } }>} */
+    visualWorkspace: () => request('/api/visual/workspace'),
+    /**
+     * @param {object} body
+     * @returns {Promise<CaptureJobInfo>}
+     */
+    visualCapture: (body) =>
+      request('/api/visual/workspace/capture', { method: 'POST', body: JSON.stringify(body) }),
+    visualCancel: () => request('/api/visual/workspace/cancel', { method: 'POST' }),
+    /**
+     * @param {number} start
+     * @param {number} limit
+     * @returns {Promise<CompareInfo>}
+     */
+    visualCompare: (start, limit) =>
+      request('/api/visual/workspace/compare', {
+        method: 'POST',
+        body: JSON.stringify({ start, limit }),
+      }),
+    visualClear: () => request('/api/visual/workspace', { method: 'DELETE' }),
     /**
      * Subscribes to a run's events; returns a function that closes the socket.
      *

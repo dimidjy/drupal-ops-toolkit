@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { createApi } from '../api.js';
 
 const STORAGE_KEY = 'dops-token';
@@ -23,6 +23,11 @@ export function TokenGate({ children }) {
   const [error, setError] = useState('');
   const api = useMemo(() => (token ? createApi(token) : null), [token]);
 
+  // The cookie lets <img> tags and plain links (screenshots, reports) through.
+  useEffect(() => {
+    api?.startSession().catch(() => {});
+  }, [api]);
+
   /** @param {import('react').FormEvent} event */
   async function submit(event) {
     event.preventDefault();
@@ -41,6 +46,7 @@ export function TokenGate({ children }) {
   }
 
   function logout() {
+    api?.endSession().catch(() => {});
     try {
       localStorage.removeItem(STORAGE_KEY);
     } catch {

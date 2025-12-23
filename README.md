@@ -69,3 +69,9 @@ first with before, after and diff images side by side. Dynamic elements such
 as status messages or sliders can be hidden with `visual.hide` selectors.
 Environments behind basic auth read their credentials from the env variables
 named in `httpAuth`.
+
+The dashboard's Visual tab does the same without any config: paste a list of
+URLs, pick a viewport and settle delay, optionally add basic auth or cookies
+(used for that capture only), then take the "before" screenshots, deploy, take
+the "after" ones and compare. Only the pages that changed are listed, with
+before, after and diff images, twenty at a time.

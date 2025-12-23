@@ -388,3 +388,84 @@ td.actions {
 td.actions button + button {
   margin-left: 0.75rem;
 }
+
+.small {
+  font-size: 0.8em;
+}
+
+.status.warn,
+.warn-text {
+  color: #b45309;
+}
+
+.visual-testing .card {
+  gap: 0.6rem;
+  margin-bottom: 1rem;
+}
+
+progress {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.page-errors {
+  margin: 0;
+  padding-left: 1.1rem;
+  font-size: 0.9em;
+}
+
+.summary-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: baseline;
+  padding: 0.6rem 0.9rem;
+  margin-bottom: 0.75rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.diff-list {
+  list-style: none;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.diff-card .url {
+  font-weight: 600;
+  word-break: break-all;
+}
+
+.shots {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 0.75rem;
+}
+
+.shots figure {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.shots figcaption {
+  font-weight: 600;
+  font-size: 0.9em;
+}
+
+.shots img {
+  width: 100%;
+  max-height: 520px;
+  object-fit: cover;
+  object-position: top;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.field > span.small {
+  font-weight: normal;
+}
