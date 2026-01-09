@@ -75,3 +75,16 @@ URLs, pick a viewport and settle delay, optionally add basic auth or cookies
 (used for that capture only), then take the "before" screenshots, deploy, take
 the "after" ones and compare. Only the pages that changed are listed, with
 before, after and diff images, twenty at a time.
+
+## AI review
+
+`python/ai-review` is a small Python CLI that sends a diff to an LLM and gets
+back a structured review: summary, verdict and findings with file, line and
+severity. I run it on my branch before opening a merge request.
+
+```bash
+cd python/ai-review && uv sync
+uv run dops-ai review --diff main...
+```
+
+See [python/ai-review/README.md](python/ai-review/README.md).
