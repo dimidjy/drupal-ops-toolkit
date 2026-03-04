@@ -5,7 +5,10 @@ import pytest
 from typer.testing import CliRunner
 
 from dops_ai_review import __version__, cli
+from dops_ai_review.jira import JiraIssue
 from dops_ai_review.models import Finding, Review
+
+from .conftest import git
 
 runner = CliRunner()
 
@@ -69,3 +72,43 @@ def test_context_file_is_sent(fake: FakeProvider, tmp_path: Path) -> None:
 def test_git_errors_exit_with_2(fake: FakeProvider) -> None:
     result = runner.invoke(cli.app, ["review", "--diff", "nope"])
     assert result.exit_code == 2
+
+
+def test_commit_review_loads_tickets(
+    fake: FakeProvider, repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class FakeJira:
+        def get_issue(self, key: str) -> JiraIssue:
+            return JiraIssue(
+                key=key,
+                summary="Escape search input",
+                status="In Progress",
+                issue_type="Bug",
+                description="The query is printed raw.",
+            )
+
+    monkeypatch.setattr(cli.JiraClient, "from_env", lambda _env: FakeJira())
+    git(repo, "add", ".")
+    git(repo, "commit", "-q", "-m", "SHOP-7: print search query")
+
+    result = runner.invoke(cli.app, ["commit", "--no-strict"])
+
+    assert result.exit_code == 0
+    prompt = fake.prompts[0]
+    assert "<tickets>\nSHOP-7 [Bug, In Progress] Escape search input" in prompt
+    assert "<commit_message>\nSHOP-7: print search query\n</commit_message>" in prompt
+    assert "a.php" in prompt
+
+
+def test_commit_review_without_jira_config(
+    fake: FakeProvider, repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for name in ("JIRA_URL", "JIRA_EMAIL", "JIRA_API_TOKEN"):
+        monkeypatch.delenv(name, raising=False)
+    git(repo, "add", ".")
+    git(repo, "commit", "-q", "-m", "SHOP-7: print search query")
+
+    result = runner.invoke(cli.app, ["commit", "--no-strict"])
+
+    assert result.exit_code == 0
+    assert "<tickets>" not in fake.prompts[0]

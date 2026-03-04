@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from dops_ai_review.git import GitError, collect_diff, fit_to_budget, split_files
+from dops_ai_review.git import GitError, collect_diff, commit_message, fit_to_budget, split_files
 
 from .conftest import git
 
@@ -63,3 +63,14 @@ def test_staged_only(repo: Path) -> None:
 def test_unknown_revision(repo: Path) -> None:
     with pytest.raises(GitError):
         collect_diff("does-not-exist", cwd=repo)
+
+
+def test_commit_message_and_single_commit_diff(repo: Path) -> None:
+    (repo / "a.txt").write_text("a\n")
+    git(repo, "add", ".")
+    git(repo, "commit", "-q", "-m", "SHOP-1: add a\n\nBody")
+    (repo / "b.txt").write_text("b\n")
+    git(repo, "add", ".")
+    git(repo, "commit", "-q", "-m", "SHOP-2: add b")
+    assert commit_message("HEAD~1", cwd=repo) == "SHOP-1: add a\n\nBody"
+    assert collect_diff("HEAD~1^!", cwd=repo).files == ["a.txt"]

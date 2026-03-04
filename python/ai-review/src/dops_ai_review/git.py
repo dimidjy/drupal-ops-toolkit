@@ -92,3 +92,7 @@ def collect_diff(
     args.append(rev or "HEAD")
     args += ["--", ".", *(f":(exclude,glob)**/{pattern}" for pattern in EXCLUDED)]
     return fit_to_budget(run_git(args, cwd), max_chars)
+
+
+def commit_message(rev: str = "HEAD", cwd: Path | None = None) -> str:
+    return run_git(["log", "-1", "--format=%B", rev], cwd).strip()
