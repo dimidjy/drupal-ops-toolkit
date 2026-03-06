@@ -22,7 +22,7 @@ class Review(BaseModel):
 
 
 # Written by hand rather than generated: strict structured output needs every
-# property listed as required and nullable fields spelled as type unions.
+# property listed as required, and the same schema works for every provider.
 REVIEW_SCHEMA: dict[str, Any] = {
     "type": "object",
     "additionalProperties": False,
@@ -38,7 +38,7 @@ REVIEW_SCHEMA: dict[str, Any] = {
                 "required": ["file", "line", "severity", "message"],
                 "properties": {
                     "file": {"type": "string"},
-                    "line": {"type": ["integer", "null"]},
+                    "line": {"anyOf": [{"type": "integer"}, {"type": "null"}]},
                     "severity": {"type": "string", "enum": ["info", "minor", "major", "critical"]},
                     "message": {"type": "string"},
                 },
