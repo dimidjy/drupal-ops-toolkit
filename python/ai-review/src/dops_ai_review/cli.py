@@ -10,6 +10,7 @@ from rich.console import Console
 
 from dops_ai_review import __version__
 from dops_ai_review.git import Diff, GitError, collect_diff, commit_message
+from dops_ai_review.hooks import HookError, install_hook, uninstall_hook
 from dops_ai_review.jira import JiraClient, JiraError, JiraIssue, issue_keys
 from dops_ai_review.providers import ProviderError, get_provider
 from dops_ai_review.render import print_review
@@ -148,3 +149,32 @@ def commit(
         tickets=tickets,
         message=message,
     )
+
+
+hook_app = typer.Typer(help="Run the review automatically before git push.")
+app.add_typer(hook_app, name="hook")
+
+
+@hook_app.command("install")
+def hook_install(
+    provider: ProviderOption = "openai",
+    force: Annotated[bool, typer.Option(help="Replace an existing pre-push hook.")] = False,
+) -> None:
+    """Install a pre-push hook that reviews the commits being pushed."""
+    try:
+        path = install_hook(provider, force=force)
+    except (GitError, HookError) as error:
+        errors.print(f"[red]error:[/] {error}")
+        raise typer.Exit(2) from error
+    console.print(f"Installed {path}")
+
+
+@hook_app.command("uninstall")
+def hook_uninstall() -> None:
+    """Remove the pre-push hook installed by dops-ai."""
+    try:
+        path = uninstall_hook()
+    except (GitError, HookError) as error:
+        errors.print(f"[red]error:[/] {error}")
+        raise typer.Exit(2) from error
+    console.print(f"Removed {path}" if path else "No pre-push hook installed")
