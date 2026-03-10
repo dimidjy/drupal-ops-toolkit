@@ -1,6 +1,8 @@
-from typing import Protocol
+from typing import Any, Protocol, TypeVar
 
-from dops_ai_review.models import Review
+from pydantic import BaseModel
+
+T = TypeVar("T", bound=BaseModel)
 
 
 class ProviderError(RuntimeError):
@@ -11,4 +13,6 @@ class Provider(Protocol):
     name: str
     model: str
 
-    def review(self, system: str, prompt: str) -> Review: ...
+    def generate(self, system: str, prompt: str, output: type[T], schema: dict[str, Any]) -> T:
+        """Asks the model for JSON matching ``schema`` and validates it as ``output``."""
+        ...

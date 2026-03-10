@@ -6,6 +6,7 @@ import anthropic
 import httpx2
 import pytest
 
+from dops_ai_review.models import REVIEW_SCHEMA, Review
 from dops_ai_review.providers import AnthropicProvider, ProviderError
 
 REVIEW = {"summary": "Adds a route.", "verdict": "approve", "findings": []}
@@ -40,7 +41,7 @@ def test_review_requests_structured_output() -> None:
         requests.append(request)
         return httpx2.Response(200, json=message(json.dumps(REVIEW)))
 
-    review = provider(handler).review("system", "diff")
+    review = provider(handler).generate("system", "diff", Review, REVIEW_SCHEMA)
 
     assert review.verdict == "approve"
     body = json.loads(requests[0].content)
@@ -53,18 +54,24 @@ def test_review_requests_structured_output() -> None:
 
 def test_refusal() -> None:
     with pytest.raises(ProviderError, match="declined"):
-        provider(lambda _: httpx2.Response(200, json=message("", "refusal"))).review("s", "p")
+        provider(lambda _: httpx2.Response(200, json=message("", "refusal"))).generate(
+            "s", "p", Review, REVIEW_SCHEMA
+        )
 
 
 def test_truncated_output() -> None:
     with pytest.raises(ProviderError, match="max_tokens"):
-        provider(lambda _: httpx2.Response(200, json=message("{", "max_tokens"))).review("s", "p")
+        provider(lambda _: httpx2.Response(200, json=message("{", "max_tokens"))).generate(
+            "s", "p", Review, REVIEW_SCHEMA
+        )
 
 
 def test_api_errors() -> None:
     error = {"type": "error", "error": {"type": "authentication_error", "message": "bad key"}}
     with pytest.raises(ProviderError, match="API key"):
-        provider(lambda _: httpx2.Response(401, json=error)).review("s", "p")
+        provider(lambda _: httpx2.Response(401, json=error)).generate(
+            "s", "p", Review, REVIEW_SCHEMA
+        )
 
 
 def test_from_env() -> None:

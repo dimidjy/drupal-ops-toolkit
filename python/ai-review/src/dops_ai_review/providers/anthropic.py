@@ -1,14 +1,13 @@
 """Claude via the official Anthropic SDK, with structured JSON output."""
 
 from collections.abc import Mapping
-from typing import Literal, cast, get_args
+from typing import Any, Literal, cast, get_args
 
 import anthropic
 from anthropic.types.beta import BetaOutputConfigParam
 from pydantic import ValidationError
 
-from dops_ai_review.models import REVIEW_SCHEMA, Review
-from dops_ai_review.providers.base import ProviderError
+from dops_ai_review.providers.base import ProviderError, T
 
 DEFAULT_MODEL = "claude-opus-5-5"
 
@@ -42,10 +41,10 @@ class AnthropicProvider:
             effort=cast(Effort, effort),
         )
 
-    def review(self, system: str, prompt: str) -> Review:
+    def generate(self, system: str, prompt: str, output: type[T], schema: dict[str, Any]) -> T:
         output_config: BetaOutputConfigParam = {
             "effort": self.effort,
-            "format": {"type": "json_schema", "schema": REVIEW_SCHEMA},
+            "format": {"type": "json_schema", "schema": schema},
         }
         try:
             response = self._client.beta.messages.create(
@@ -68,11 +67,11 @@ class AnthropicProvider:
             raise ProviderError(f"Anthropic request failed: {error}") from error
 
         if response.stop_reason == "refusal":
-            raise ProviderError("Model declined to review this diff")
+            raise ProviderError("Model declined the request")
         if response.stop_reason == "max_tokens":
-            raise ProviderError("Review was cut off at max_tokens; try a smaller diff")
+            raise ProviderError("Output was cut off at max_tokens; try a smaller input")
         text = next((block.text for block in response.content if block.type == "text"), "")
         try:
-            return Review.model_validate_json(text)
+            return output.model_validate_json(text)
         except ValidationError as error:
-            raise ProviderError(f"Unexpected review format: {error}") from error
+            raise ProviderError(f"Unexpected {output.__name__} format: {error}") from error

@@ -4,6 +4,7 @@ import httpx
 import pytest
 import respx
 
+from dops_ai_review.models import REVIEW_SCHEMA, Review
 from dops_ai_review.providers import OpenAIProvider, ProviderError
 
 URL = "https://api.openai.com/v1/chat/completions"
@@ -24,7 +25,7 @@ def completion(content: str, refusal: str | None = None) -> dict[str, object]:
 @respx.mock
 def test_review_sends_schema_and_parses_result() -> None:
     route = respx.post(URL).respond(json=completion(json.dumps(REVIEW)))
-    review = OpenAIProvider("sk-test").review("system", "diff")
+    review = OpenAIProvider("sk-test").generate("system", "diff", Review, REVIEW_SCHEMA)
 
     assert review.verdict == "comment"
     assert review.findings[0].line == 12
@@ -38,28 +39,28 @@ def test_review_sends_schema_and_parses_result() -> None:
 def test_api_errors_are_readable() -> None:
     respx.post(URL).respond(401, json={"error": {"message": "Incorrect API key"}})
     with pytest.raises(ProviderError, match="401: Incorrect API key"):
-        OpenAIProvider("bad").review("s", "p")
+        OpenAIProvider("bad").generate("s", "p", Review, REVIEW_SCHEMA)
 
 
 @respx.mock
 def test_refusal() -> None:
     respx.post(URL).respond(json=completion("", refusal="no"))
     with pytest.raises(ProviderError, match="refused"):
-        OpenAIProvider("sk").review("s", "p")
+        OpenAIProvider("sk").generate("s", "p", Review, REVIEW_SCHEMA)
 
 
 @respx.mock
 def test_invalid_content() -> None:
     respx.post(URL).respond(json=completion('{"summary": "x"}'))
-    with pytest.raises(ProviderError, match="Unexpected review format"):
-        OpenAIProvider("sk").review("s", "p")
+    with pytest.raises(ProviderError, match="Unexpected Review format"):
+        OpenAIProvider("sk").generate("s", "p", Review, REVIEW_SCHEMA)
 
 
 @respx.mock
 def test_network_error() -> None:
     respx.post(URL).mock(side_effect=httpx.ConnectError("boom"))
     with pytest.raises(ProviderError, match="request failed"):
-        OpenAIProvider("sk").review("s", "p")
+        OpenAIProvider("sk").generate("s", "p", Review, REVIEW_SCHEMA)
 
 
 def test_from_env() -> None:

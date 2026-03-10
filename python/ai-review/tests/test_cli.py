@@ -1,12 +1,16 @@
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
+from pydantic import BaseModel
 from typer.testing import CliRunner
 
 from dops_ai_review import __version__, cli
+from dops_ai_review.board import BoardSummary
 from dops_ai_review.jira import JiraIssue
 from dops_ai_review.models import Finding, Review
+from dops_ai_review.providers.base import T
 
 from .conftest import git
 
@@ -17,13 +21,13 @@ class FakeProvider:
     name = "fake"
     model = "fake-1"
 
-    def __init__(self, review: Review) -> None:
+    def __init__(self, review: BaseModel) -> None:
         self.result = review
         self.prompts: list[str] = []
 
-    def review(self, system: str, prompt: str) -> Review:
+    def generate(self, system: str, prompt: str, output: type[T], schema: dict[str, Any]) -> T:
         self.prompts.append(prompt)
-        return self.result
+        return output.model_validate(self.result.model_dump())
 
 
 @pytest.fixture
@@ -112,3 +116,31 @@ def test_commit_review_without_jira_config(
 
     assert result.exit_code == 0
     assert "<tickets>" not in fake.prompts[0]
+
+
+def test_board_with_summary(monkeypatch: pytest.MonkeyPatch) -> None:
+    issues = [
+        JiraIssue(key="A-1", summary="Checkout", status="In Progress", issue_type="Story"),
+        JiraIssue(key="A-2", summary="Fix VAT", status="To Do", issue_type="Bug", priority="High"),
+    ]
+
+    class FakeJira:
+        def search(self, jql: str, limit: int) -> list[JiraIssue]:
+            assert jql == "project = A"
+            return issues
+
+    provider = FakeProvider(BoardSummary(summary="Two open items.", risks=["A-2 unassigned"]))
+    monkeypatch.setattr(cli.JiraClient, "from_env", lambda _env: FakeJira())
+    monkeypatch.setattr(cli, "get_provider", lambda *_: provider)
+
+    result = runner.invoke(cli.app, ["board", "--jql", "project = A", "--summarize"])
+
+    assert result.exit_code == 0, result.stdout
+    assert "In Progress (1)" in result.stdout
+    assert "A-2 unassigned" in result.stdout
+    assert "- A-2 [Bug, High, unassigned] Fix VAT" in provider.prompts[0]
+
+
+def test_board_needs_a_query(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("DOPS_JIRA_JQL", raising=False)
+    assert runner.invoke(cli.app, ["board"]).exit_code == 2

@@ -1,12 +1,12 @@
 """OpenAI chat completions with strict structured output."""
 
 from collections.abc import Mapping
+from typing import Any
 
 import httpx
 from pydantic import ValidationError
 
-from dops_ai_review.models import REVIEW_SCHEMA, Review
-from dops_ai_review.providers.base import ProviderError
+from dops_ai_review.providers.base import ProviderError, T
 
 DEFAULT_MODEL = "gpt-4.1-mini"
 
@@ -36,7 +36,7 @@ class OpenAIProvider:
             raise ProviderError("OPENAI_API_KEY is not set")
         return cls(api_key, model or env.get("DOPS_OPENAI_MODEL") or DEFAULT_MODEL)
 
-    def review(self, system: str, prompt: str) -> Review:
+    def generate(self, system: str, prompt: str, output: type[T], schema: dict[str, Any]) -> T:
         try:
             response = self._client.post(
                 "/chat/completions",
@@ -49,7 +49,11 @@ class OpenAIProvider:
                     ],
                     "response_format": {
                         "type": "json_schema",
-                        "json_schema": {"name": "review", "strict": True, "schema": REVIEW_SCHEMA},
+                        "json_schema": {
+                            "name": output.__name__.lower(),
+                            "strict": True,
+                            "schema": schema,
+                        },
                     },
                 },
             )
@@ -63,9 +67,9 @@ class OpenAIProvider:
         if message.get("refusal"):
             raise ProviderError(f"Model refused: {message['refusal']}")
         try:
-            return Review.model_validate_json(message["content"])
+            return output.model_validate_json(message["content"])
         except ValidationError as error:
-            raise ProviderError(f"Unexpected review format: {error}") from error
+            raise ProviderError(f"Unexpected {output.__name__} format: {error}") from error
 
 
 def _error_message(response: httpx.Response) -> str:
