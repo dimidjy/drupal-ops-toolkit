@@ -78,13 +78,18 @@ before, after and diff images, twenty at a time.
 
 ## AI review
 
-`python/ai-review` is a small Python CLI that sends a diff to an LLM and gets
-back a structured review: summary, verdict and findings with file, line and
-severity. I run it on my branch before opening a merge request.
+`python/ai-review` is a small Python CLI (`dops-ai`) that I use around every
+merge request:
+
+- `dops-ai review --diff main...` sends the branch diff to OpenAI or Claude and
+  gets back a structured review (verdict, findings with file, line and severity)
+- `dops-ai commit` checks a commit against the Jira tickets named in its message
+- `dops-ai hook install` runs the review before each `git push`
+- `dops-ai board --summarize` gives a stand-up overview of the sprint
 
 ```bash
 cd python/ai-review && uv sync
-uv run dops-ai review --diff main...
+uv run dops-ai review --diff main... --provider anthropic
 ```
 
 See [python/ai-review/README.md](python/ai-review/README.md).
