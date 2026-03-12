@@ -6,6 +6,7 @@ import websocket from '@fastify/websocket';
 import Fastify from 'fastify';
 import { Workspace, isLocalTarget, pipelineParams } from '@dops/core';
 import { MissingParamsError, RunConflictError, RunManager } from './runs.js';
+import { AiService } from './ai.js';
 import { VisualJobs } from './visual.js';
 
 /**
@@ -22,6 +23,7 @@ import { VisualJobs } from './visual.js';
  * @property {boolean | object} [logger]
  * @property {string} [staticDir] Built dashboard to serve on /, if present.
  * @property {Workspace} [workspace] Dashboard-made pipelines and parameters.
+ * @property {AiService} [ai] Commit reviews through dops-ai; injectable for tests.
  */
 
 /**
@@ -60,6 +62,7 @@ export function buildServer({
   logger = false,
   staticDir,
   workspace = new Workspace(config.dashboard.workspaceFile, config),
+  ai = new AiService(config),
 }) {
   if (!token || token.length < 16) {
     throw new Error('A token of at least 16 characters is required');
@@ -293,6 +296,33 @@ export function buildServer({
     return runs.cancel(id)
       ? reply.code(202).send({ id })
       : reply.code(404).send({ error: 'No active run with this id' });
+  });
+
+  app.get('/api/git/commits', async (request) => {
+    const query = /** @type {{ limit?: string }} */ (request.query);
+    return ai.commits(Number(query.limit ?? 15));
+  });
+
+  app.post(
+    '/api/ai/reviews',
+    {
+      schema: {
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          properties: { sha: { type: 'string' }, provider: { type: 'string' } },
+        },
+      },
+    },
+    async (request) =>
+      ai.review(/** @type {{ sha?: string, provider?: string }} */ (request.body ?? {})),
+  );
+
+  app.get('/api/ai/reviews', async () => ai.reviews());
+
+  app.get('/api/ai/reviews/:id', async (request, reply) => {
+    const { id } = /** @type {{ id: string }} */ (request.params);
+    return (await ai.get(id)) ?? reply.code(404).send({ error: 'Review not found' });
   });
 
   const visualJobs = new VisualJobs(config.visual);

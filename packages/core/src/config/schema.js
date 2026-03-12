@@ -97,6 +97,15 @@ export const configSchema = z
     pipelines: z.record(name, pipelineSchema).default({}),
     params: z.record(paramName, paramSchema).default({}),
     visual: visual.default({}),
+    ai: z
+      .object({
+        /** How to start dops-ai; defaults to the Python package in this repository via uv. */
+        command: z.string().optional(),
+        /** Git repository whose commits the dashboard reviews. */
+        repo: z.string().default('.'),
+        provider: z.enum(['openai', 'anthropic']).default('openai'),
+      })
+      .default({}),
     dashboard: z
       .object({
         /** Allow free-form commands from the dashboard (localhost + token only). */
