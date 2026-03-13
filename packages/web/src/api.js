@@ -68,6 +68,24 @@
  * @property {VisualDiffInfo[]} results
  */
 
+/**
+ * @typedef {object} FindingInfo
+ * @property {string} file
+ * @property {number | null} [line]
+ * @property {'info' | 'minor' | 'major' | 'critical'} severity
+ * @property {string} message
+ */
+
+/**
+ * @typedef {object} ReviewRecord
+ * @property {string} id
+ * @property {string | null} sha
+ * @property {string} subject
+ * @property {string} provider
+ * @property {string} createdAt
+ * @property {{ summary: string, verdict: 'approve' | 'comment' | 'request_changes', findings: FindingInfo[] }} review
+ */
+
 export class ApiError extends Error {
   /**
    * @param {number} status
@@ -190,6 +208,24 @@ export function createApi(token, base = '') {
         body: JSON.stringify({ start, limit }),
       }),
     visualClear: () => request('/api/visual/workspace', { method: 'DELETE' }),
+    /**
+     * @param {number} [limit]
+     * @returns {Promise<{ sha: string, author: string, date: string, subject: string }[]>}
+     */
+    commits: (limit = 15) => request(`/api/git/commits?limit=${limit}`),
+    /**
+     * @param {{ sha?: string, provider?: string }} body
+     * @returns {Promise<ReviewRecord>}
+     */
+    reviewCommit: (body) =>
+      request('/api/ai/reviews', { method: 'POST', body: JSON.stringify(body) }),
+    /** @returns {Promise<{ id: string, sha: string | null, subject: string, provider: string, createdAt: string, verdict: string, findings: number }[]>} */
+    reviews: () => request('/api/ai/reviews'),
+    /**
+     * @param {string} id
+     * @returns {Promise<ReviewRecord>}
+     */
+    review: (id) => request(`/api/ai/reviews/${encodeURIComponent(id)}`),
     /**
      * Subscribes to a run's events; returns a function that closes the socket.
      *

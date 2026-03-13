@@ -92,4 +92,8 @@ cd python/ai-review && uv sync
 uv run dops-ai review --diff main... --provider anthropic
 ```
 
+The dashboard's Review tab lists the latest commits of `ai.repo`; pick one and
+it runs `dops-ai commit` (with the Jira tickets from the message) or reviews
+the uncommitted changes, shows the findings and keeps past reviews.
+
 See [python/ai-review/README.md](python/ai-review/README.md).

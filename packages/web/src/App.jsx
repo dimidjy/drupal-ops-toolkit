@@ -3,6 +3,7 @@ import { History } from './components/History.jsx';
 import { Params } from './components/Params.jsx';
 import { PipelineEditor } from './components/PipelineEditor.jsx';
 import { Pipelines } from './components/Pipelines.jsx';
+import { Review } from './components/Review.jsx';
 import { RunView } from './components/RunView.jsx';
 import { TokenGate } from './components/TokenGate.jsx';
 import { VisualTesting } from './components/VisualTesting.jsx';
@@ -13,6 +14,7 @@ const TABS = /** @type {const} */ ([
   'Editor',
   'Parameters',
   'Visual',
+  'Review',
   'History',
 ]);
 
@@ -58,6 +60,8 @@ function Dashboard({ api, logout }) {
           <Params api={api} />
         ) : tab === 'Visual' ? (
           <VisualTesting api={api} />
+        ) : tab === 'Review' ? (
+          <Review api={api} />
         ) : (
           <History api={api} onOpen={setRunId} />
         )}
