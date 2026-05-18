@@ -4,13 +4,23 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
 from pydantic import BaseModel, Field
 
 ISSUE_KEY = re.compile(r"\b([A-Z][A-Z0-9]{1,9}-\d+)\b")
-FIELDS = ["summary", "description", "status", "issuetype", "priority", "assignee", "labels"]
+FIELDS = [
+    "summary",
+    "description",
+    "status",
+    "issuetype",
+    "priority",
+    "assignee",
+    "labels",
+    "updated",
+]
 
 
 class JiraError(RuntimeError):
@@ -26,6 +36,13 @@ class JiraIssue(BaseModel):
     assignee: str | None = None
     labels: list[str] = Field(default_factory=list)
     description: str = ""
+    updated: datetime | None = None
+
+    def idle_days(self, now: datetime | None = None) -> int | None:
+        """Whole days since the issue was last updated."""
+        if self.updated is None:
+            return None
+        return ((now or datetime.now(UTC)) - self.updated).days
 
     def as_context(self) -> str:
         """The issue as plain text for a prompt."""
@@ -63,6 +80,16 @@ def _name(field: Any, key: str = "name") -> str | None:
     return str(field[key]) if isinstance(field, dict) and field.get(key) else None
 
 
+def parse_time(value: Any) -> datetime | None:
+    """Jira timestamps look like 2026-05-18T10:12:33.000+0200."""
+    if not isinstance(value, str):
+        return None
+    try:
+        return datetime.strptime(value, "%Y-%m-%dT%H:%M:%S.%f%z")
+    except ValueError:
+        return None
+
+
 def parse_issue(data: Mapping[str, Any]) -> JiraIssue:
     fields = data.get("fields", {})
     return JiraIssue(
@@ -74,6 +101,7 @@ def parse_issue(data: Mapping[str, Any]) -> JiraIssue:
         assignee=_name(fields.get("assignee"), "displayName"),
         labels=fields.get("labels") or [],
         description=adf_to_text(fields.get("description")).strip(),
+        updated=parse_time(fields.get("updated")),
     )
 
 

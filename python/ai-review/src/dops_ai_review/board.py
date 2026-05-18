@@ -1,6 +1,7 @@
 """Sprint / board overview from a JQL query, optionally summarised by a model."""
 
 from collections.abc import Sequence
+from datetime import datetime
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -39,6 +40,17 @@ too much in progress, bugs piling up) and list issues that look blocked. Be fact
 and brief, and only refer to issues that are in the list."""
 
 
+# Statuses where an untouched issue is worth a second look.
+ACTIVE_HINTS = ("progress", "review", "test", "qa")
+STALE_DAYS = 5
+
+
+def is_stale(issue: JiraIssue, now: datetime | None = None) -> bool:
+    idle = issue.idle_days(now)
+    active = any(hint in issue.status.lower() for hint in ACTIVE_HINTS)
+    return active and idle is not None and idle >= STALE_DAYS
+
+
 def group_by_status(issues: Sequence[JiraIssue]) -> dict[str, list[JiraIssue]]:
     groups: dict[str, list[JiraIssue]] = {}
     for issue in issues:
@@ -56,7 +68,9 @@ def board_prompt(issues: Sequence[JiraIssue]) -> str:
                 for part in (issue.issue_type, issue.priority, issue.assignee or "unassigned")
                 if part
             )
-            lines.append(f"- {issue.key} [{meta}] {issue.summary}")
+            idle = issue.idle_days()
+            updated = f" (no update for {idle} days)" if idle else ""
+            lines.append(f"- {issue.key} [{meta}] {issue.summary}{updated}")
     return "\n".join(lines)
 
 
@@ -71,6 +85,7 @@ def print_board(issues: Sequence[JiraIssue], console: Console) -> None:
         table.add_column("type")
         table.add_column("priority")
         table.add_column("assignee")
+        table.add_column("idle", justify="right")
         table.add_column("summary", overflow="fold")
         for issue in group:
             table.add_row(
@@ -78,10 +93,18 @@ def print_board(issues: Sequence[JiraIssue], console: Console) -> None:
                 issue.issue_type,
                 issue.priority or "",
                 issue.assignee or "[dim]unassigned[/]",
+                _idle(issue),
                 issue.summary,
             )
         console.print(table)
         console.print()
+
+
+def _idle(issue: JiraIssue) -> str:
+    idle = issue.idle_days()
+    if idle is None:
+        return ""
+    return f"[red]{idle}d[/]" if is_stale(issue) else f"[dim]{idle}d[/]"
 
 
 def print_summary(summary: BoardSummary, console: Console) -> None:
