@@ -144,3 +144,15 @@ def test_board_with_summary(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_board_needs_a_query(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("DOPS_JIRA_JQL", raising=False)
     assert runner.invoke(cli.app, ["board"]).exit_code == 2
+
+
+def test_board_json(monkeypatch: pytest.MonkeyPatch) -> None:
+    class FakeJira:
+        def search(self, jql: str, limit: int) -> list[JiraIssue]:
+            return [JiraIssue(key="A-1", summary="x", status="Done", issue_type="Task")]
+
+    monkeypatch.setattr(cli.JiraClient, "from_env", lambda _env: FakeJira())
+    result = runner.invoke(cli.app, ["board", "--jql", "project = A", "--json"])
+    data = json.loads(result.stdout)
+    assert data["counts"] == {"Done": 1}
+    assert data["summary"] is None

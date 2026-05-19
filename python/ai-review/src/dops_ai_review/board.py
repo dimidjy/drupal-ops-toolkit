@@ -1,8 +1,8 @@
 """Sprint / board overview from a JQL query, optionally summarised by a model."""
 
 from collections.abc import Sequence
-from datetime import datetime
-from typing import Any
+from datetime import UTC, datetime
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 from rich.console import Console
@@ -51,16 +51,21 @@ def is_stale(issue: JiraIssue, now: datetime | None = None) -> bool:
     return active and idle is not None and idle >= STALE_DAYS
 
 
-def group_by_status(issues: Sequence[JiraIssue]) -> dict[str, list[JiraIssue]]:
+GroupBy = Literal["status", "assignee"]
+
+
+def group_issues(issues: Sequence[JiraIssue], by: GroupBy = "status") -> dict[str, list[JiraIssue]]:
+    """Groups issues by status or assignee, keeping the order Jira returned."""
     groups: dict[str, list[JiraIssue]] = {}
     for issue in issues:
-        groups.setdefault(issue.status, []).append(issue)
+        key = issue.status if by == "status" else issue.assignee or "Unassigned"
+        groups.setdefault(key, []).append(issue)
     return groups
 
 
 def board_prompt(issues: Sequence[JiraIssue]) -> str:
     lines = []
-    for status, group in group_by_status(issues).items():
+    for status, group in group_issues(issues).items():
         lines.append(f"## {status} ({len(group)})")
         for issue in group:
             meta = ", ".join(
@@ -78,13 +83,14 @@ def summarize_board(issues: Sequence[JiraIssue], provider: Provider) -> BoardSum
     return provider.generate(BOARD_SYSTEM, board_prompt(issues), BoardSummary, BOARD_SCHEMA)
 
 
-def print_board(issues: Sequence[JiraIssue], console: Console) -> None:
-    for status, group in group_by_status(issues).items():
-        table = Table(title=f"{status} ({len(group)})", title_justify="left", box=None)
+def print_board(issues: Sequence[JiraIssue], console: Console, by: GroupBy = "status") -> None:
+    other: GroupBy = "assignee" if by == "status" else "status"
+    for name, group in group_issues(issues, by).items():
+        table = Table(title=f"{name} ({len(group)})", title_justify="left", box=None)
         table.add_column("key", style="bold", no_wrap=True)
         table.add_column("type")
         table.add_column("priority")
-        table.add_column("assignee")
+        table.add_column(other)
         table.add_column("idle", justify="right")
         table.add_column("summary", overflow="fold")
         for issue in group:
@@ -92,7 +98,7 @@ def print_board(issues: Sequence[JiraIssue], console: Console) -> None:
                 issue.key,
                 issue.issue_type,
                 issue.priority or "",
-                issue.assignee or "[dim]unassigned[/]",
+                (issue.assignee or "[dim]unassigned[/]") if other == "assignee" else issue.status,
                 _idle(issue),
                 issue.summary,
             )
@@ -105,6 +111,34 @@ def _idle(issue: JiraIssue) -> str:
     if idle is None:
         return ""
     return f"[red]{idle}d[/]" if is_stale(issue) else f"[dim]{idle}d[/]"
+
+
+class BoardReport(BaseModel):
+    """Machine-readable output of ``dops-ai board --json``."""
+
+    jql: str
+    generated_at: datetime
+    counts: dict[str, int]
+    stale: list[str]
+    issues: list[JiraIssue]
+    summary: BoardSummary | None = None
+
+
+def build_report(
+    jql: str,
+    issues: Sequence[JiraIssue],
+    summary: BoardSummary | None = None,
+    now: datetime | None = None,
+) -> BoardReport:
+    now = now or datetime.now(UTC)
+    return BoardReport(
+        jql=jql,
+        generated_at=now,
+        counts={status: len(group) for status, group in group_issues(issues).items()},
+        stale=[issue.key for issue in issues if is_stale(issue, now)],
+        issues=list(issues),
+        summary=summary,
+    )
 
 
 def print_summary(summary: BoardSummary, console: Console) -> None:

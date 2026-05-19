@@ -9,7 +9,13 @@ import typer
 from rich.console import Console
 
 from dops_ai_review import __version__
-from dops_ai_review.board import print_board, print_summary, summarize_board
+from dops_ai_review.board import (
+    GroupBy,
+    build_report,
+    print_board,
+    print_summary,
+    summarize_board,
+)
 from dops_ai_review.git import Diff, GitError, collect_diff, commit_message
 from dops_ai_review.hooks import HookError, install_hook, uninstall_hook
 from dops_ai_review.jira import JiraClient, JiraError, JiraIssue, issue_keys
@@ -187,8 +193,10 @@ def board(
         str | None,
         typer.Option(help="Issues to show; defaults to DOPS_JIRA_JQL."),
     ] = None,
+    group_by: Annotated[GroupBy, typer.Option(help="Group by status or assignee.")] = "status",
     limit: Annotated[int, typer.Option(help="Maximum number of issues.")] = 100,
     summarize: Annotated[bool, typer.Option(help="Add an AI summary with risks.")] = False,
+    as_json: JsonOption = False,
     provider: ProviderOption = "openai",
     model: ModelOption = None,
 ) -> None:
@@ -199,13 +207,20 @@ def board(
         raise typer.Exit(2)
     try:
         issues = JiraClient.from_env(os.environ).search(query, limit)
-        print_board(issues, console)
+        summary = None
         if summarize and issues:
             with console.status("Summarising…", spinner="dots"):
                 summary = summarize_board(issues, get_provider(provider, os.environ, model))
-            print_summary(summary, console)
     except (JiraError, ProviderError) as error:
         errors.print(f"[red]error:[/] {error}")
         raise typer.Exit(2) from error
+
+    if as_json:
+        typer.echo(build_report(query, issues, summary).model_dump_json(indent=2))
+        return
     if not issues:
         console.print("No issues match the query.")
+        return
+    print_board(issues, console, group_by)
+    if summary:
+        print_summary(summary, console)
