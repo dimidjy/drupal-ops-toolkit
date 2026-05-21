@@ -109,8 +109,9 @@ class JiraClient:
     def __init__(
         self, base_url: str, email: str, token: str, *, client: httpx.Client | None = None
     ) -> None:
+        self.base_url = base_url.rstrip("/")
         self._client = client or httpx.Client(
-            base_url=base_url.rstrip("/") + "/rest/api/3",
+            base_url=self.base_url + "/rest/api/3",
             auth=(email, token),
             headers={"Accept": "application/json"},
             timeout=30,
@@ -135,6 +136,9 @@ class JiraClient:
         except httpx.HTTPError as error:
             raise JiraError(f"Jira request failed: {error}") from error
         return response.json()
+
+    def browse_url(self, key: str) -> str:
+        return f"{self.base_url}/browse/{key}"
 
     def get_issue(self, key: str) -> JiraIssue:
         return parse_issue(

@@ -21,6 +21,7 @@ from dops_ai_review.hooks import HookError, install_hook, uninstall_hook
 from dops_ai_review.jira import JiraClient, JiraError, JiraIssue, issue_keys
 from dops_ai_review.providers import ProviderError, get_provider
 from dops_ai_review.render import print_review
+from dops_ai_review.report import my_work_jql, render_markdown
 from dops_ai_review.review import review_diff
 
 app = typer.Typer(help="AI review of git diffs and commits.", no_args_is_help=True)
@@ -224,3 +225,21 @@ def board(
     print_board(issues, console, group_by)
     if summary:
         print_summary(summary, console)
+
+
+@app.command()
+def report(
+    days: Annotated[int, typer.Option(min=1, help="Look back this many days.")] = 7,
+    as_json: JsonOption = False,
+) -> None:
+    """Markdown list of my issues updated recently, grouped by status."""
+    try:
+        jira = JiraClient.from_env(os.environ)
+        issues = jira.search(my_work_jql(days), limit=200)
+    except JiraError as error:
+        errors.print(f"[red]error:[/] {error}")
+        raise typer.Exit(2) from error
+    if as_json:
+        typer.echo(build_report(my_work_jql(days), issues).model_dump_json(indent=2))
+        return
+    typer.echo(render_markdown(issues, jira.browse_url, f"My work, last {days} days"), nl=False)
