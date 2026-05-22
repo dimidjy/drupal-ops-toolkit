@@ -48,11 +48,23 @@ uv run dops-ai hook uninstall
 The hook reviews `@{upstream}...HEAD` and blocks the push only on
 `request_changes`. A missing key or a network error never blocks a push.
 
-## Board summary
+## Board summary and weekly report
 
 ```bash
 uv run dops-ai board --jql "project = SHOP AND sprint in openSprints()" --summarize
+uv run dops-ai board --group-by assignee
+uv run dops-ai board --json > board.json
+uv run dops-ai report --days 7 > week.md
 ```
+
+`board` groups issues by status (or assignee) and shows how many days each has
+gone without an update. Issues in progress, review or QA that have been idle
+for five days or more are highlighted. `--summarize` adds a short stand-up
+summary with risks. `--json` returns the counts, the stale issues, the issues
+themselves and the summary.
+
+`report` lists the issues assigned to me that were updated in the last N days,
+as markdown with links, for weekly updates and timesheets.
 
 ## Configuration
 
