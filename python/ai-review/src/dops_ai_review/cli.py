@@ -1,5 +1,6 @@
 """Command line entry point: ``dops-ai``."""
 
+import json
 import os
 from collections.abc import Sequence
 from pathlib import Path
@@ -9,6 +10,7 @@ import typer
 from rich.console import Console
 
 from dops_ai_review import __version__
+from dops_ai_review.analysis import analyze_issue
 from dops_ai_review.board import (
     GroupBy,
     build_report,
@@ -20,7 +22,7 @@ from dops_ai_review.git import Diff, GitError, collect_diff, commit_message
 from dops_ai_review.hooks import HookError, install_hook, uninstall_hook
 from dops_ai_review.jira import JiraClient, JiraError, JiraIssue, issue_keys
 from dops_ai_review.providers import ProviderError, get_provider
-from dops_ai_review.render import print_review
+from dops_ai_review.render import print_issue, print_review
 from dops_ai_review.report import my_work_jql, render_markdown
 from dops_ai_review.review import review_diff
 
@@ -243,3 +245,34 @@ def report(
         typer.echo(build_report(my_work_jql(days), issues).model_dump_json(indent=2))
         return
     typer.echo(render_markdown(issues, jira.browse_url, f"My work, last {days} days"), nl=False)
+
+
+@app.command()
+def issue(
+    key: Annotated[str, typer.Argument(help="Issue key, e.g. SHOP-42.")],
+    related: Annotated[bool, typer.Option(help="Also load linked issues and subtasks.")] = True,
+    analyze: Annotated[
+        bool, typer.Option(help="Ask the model for criteria, risks, steps.")
+    ] = False,
+    raw: Annotated[bool, typer.Option(help="Include Jira's raw JSON (with --json).")] = False,
+    provider: ProviderOption = "openai",
+    model: ModelOption = None,
+    as_json: JsonOption = False,
+) -> None:
+    """Show a Jira issue with comments and related issues, optionally analysed."""
+    try:
+        details = JiraClient.from_env(os.environ).get_details(key.upper(), related=related, raw=raw)
+        analysis = None
+        if analyze:
+            with console.status("Analysing…", spinner="dots"):
+                analysis = analyze_issue(details, get_provider(provider, os.environ, model))
+    except (JiraError, ProviderError) as error:
+        errors.print(f"[red]error:[/] {error}")
+        raise typer.Exit(2) from error
+
+    if as_json:
+        payload = details.model_dump(mode="json")
+        payload["analysis"] = analysis.model_dump() if analysis else None
+        typer.echo(json.dumps(payload, indent=2))
+        return
+    print_issue(details, analysis, console)

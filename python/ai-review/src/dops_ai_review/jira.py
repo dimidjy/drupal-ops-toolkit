@@ -52,6 +52,66 @@ class JiraIssue(BaseModel):
         return "\n".join(lines)
 
 
+class Comment(BaseModel):
+    author: str
+    created: datetime | None = None
+    body: str
+
+
+class IssueDetails(BaseModel):
+    """One issue with its comments and the issues around it (links, subtasks, parent)."""
+
+    issue: JiraIssue
+    url: str
+    comments: list[Comment] = Field(default_factory=list)
+    related: list[JiraIssue] = Field(default_factory=list)
+    raw: dict[str, Any] | None = None
+
+    def as_context(self) -> str:
+        parts = [self.issue.as_context()]
+        if self.comments:
+            parts.append(
+                "Comments:\n" + "\n".join(f"- {c.author}: {c.body}" for c in self.comments[-10:])
+            )
+        if self.related:
+            parts.append(
+                "Related issues:\n"
+                + "\n".join(
+                    f"- {r.key} [{r.issue_type}, {r.status}] {r.summary}" for r in self.related
+                )
+            )
+        return "\n\n".join(parts)
+
+
+DETAIL_FIELDS = [*FIELDS, "comment", "issuelinks", "subtasks", "parent", "reporter", "created"]
+
+
+def related_keys(fields: Mapping[str, Any]) -> list[str]:
+    """Keys of linked issues, subtasks and the parent, in that order."""
+    keys: list[str] = []
+    for link in fields.get("issuelinks") or []:
+        for side in ("outwardIssue", "inwardIssue"):
+            if isinstance(link.get(side), dict) and link[side].get("key"):
+                keys.append(link[side]["key"])
+    keys += [sub["key"] for sub in fields.get("subtasks") or [] if sub.get("key")]
+    parent = fields.get("parent")
+    if isinstance(parent, dict) and parent.get("key"):
+        keys.append(parent["key"])
+    return list(dict.fromkeys(keys))
+
+
+def parse_comments(fields: Mapping[str, Any]) -> list[Comment]:
+    comments = (fields.get("comment") or {}).get("comments") or []
+    return [
+        Comment(
+            author=_name(c.get("author"), "displayName") or "unknown",
+            created=parse_time(c.get("created")),
+            body=adf_to_text(c.get("body")).strip(),
+        )
+        for c in comments
+    ]
+
+
 def issue_keys(text: str) -> list[str]:
     """Issue keys mentioned in ``text``, in order, without duplicates."""
     return list(dict.fromkeys(ISSUE_KEY.findall(text)))
@@ -139,6 +199,25 @@ class JiraClient:
 
     def browse_url(self, key: str) -> str:
         return f"{self.base_url}/browse/{key}"
+
+    def get_details(self, key: str, *, related: bool = True, raw: bool = False) -> IssueDetails:
+        """The issue, its comments and (optionally) up to ten related issues."""
+        data = self._request("GET", f"/issue/{key}", params={"fields": ",".join(DETAIL_FIELDS)})
+        fields = data.get("fields", {})
+        others = []
+        if related:
+            for other in related_keys(fields)[:10]:
+                try:
+                    others.append(self.get_issue(other))
+                except JiraError:
+                    continue
+        return IssueDetails(
+            issue=parse_issue(data),
+            url=self.browse_url(data["key"]),
+            comments=parse_comments(fields),
+            related=others,
+            raw=data if raw else None,
+        )
 
     def get_issue(self, key: str) -> JiraIssue:
         return parse_issue(

@@ -37,6 +37,14 @@ Issue keys in the commit message (`SHOP-42: ...`) are loaded from Jira and sent
 along with the diff. The model also checks whether the change does what the
 ticket asks, and reports missing parts as findings on `(ticket)`.
 
+## Read an issue before starting
+
+```bash
+uv run dops-ai issue SHOP-42                 # issue, comments, linked issues and subtasks
+uv run dops-ai issue SHOP-42 --analyze       # + acceptance criteria, risks, questions, steps
+uv run dops-ai issue SHOP-42 --json --raw    # everything, including Jira's raw JSON
+```
+
 ## Pre-push hook
 
 ```bash
