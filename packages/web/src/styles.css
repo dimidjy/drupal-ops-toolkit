@@ -504,3 +504,63 @@ progress {
 .severity.info {
   color: var(--muted);
 }
+
+.prewrap {
+  white-space: pre-wrap;
+}
+
+ul.plain {
+  list-style: none;
+  padding: 0;
+  margin: 0.25rem 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.comments p {
+  margin: 0.15rem 0 0;
+}
+
+.analysis h4 {
+  margin: 0.6rem 0 0.2rem;
+}
+
+.analysis ul {
+  margin: 0;
+  padding-left: 1.2rem;
+}
+
+.issue-card,
+.analysis {
+  margin-bottom: 1rem;
+}
+
+.board-group h3 {
+  margin: 1rem 0 0.4rem;
+}
+
+header nav {
+  flex-wrap: wrap;
+}
+
+.board-table {
+  table-layout: fixed;
+}
+
+.board-table col.key {
+  width: 7rem;
+}
+
+.board-table col.type,
+.board-table col.priority {
+  width: 6.5rem;
+}
+
+.board-table col.assignee {
+  width: 9rem;
+}
+
+.board-table col.idle {
+  width: 4rem;
+}

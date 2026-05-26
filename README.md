@@ -96,4 +96,9 @@ The dashboard's Review tab lists the latest commits of `ai.repo`; pick one and
 it runs `dops-ai commit` (with the Jira tickets from the message) or reviews
 the uncommitted changes, shows the findings and keeps past reviews.
 
+The Jira tab loads an issue with comments and linked issues and can add an AI
+analysis (acceptance criteria, risks, questions, steps); the Board tab runs
+`dops-ai board` for a JQL query, with an optional stand-up summary, and keeps
+the reports.
+
 See [python/ai-review/README.md](python/ai-review/README.md).

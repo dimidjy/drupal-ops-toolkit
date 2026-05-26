@@ -84,4 +84,48 @@ describe('AiService', () => {
       /uv run --quiet --project '.*python\/ai-review' dops-ai/,
     );
   });
+
+  it('loads an issue with the right flags and validates the key', async () => {
+    const shell = fakeShell({ 'dops-ai issue': { stdout: '{"issue":{"key":"SHOP-7"}}' } });
+    const service = new AiService(config, { run: shell.run });
+    expect(await service.issue({ key: 'shop-7', analyze: true })).toEqual({
+      issue: { key: 'SHOP-7' },
+    });
+    expect(shell.calls[0]?.command).toBe(
+      'dops-ai issue SHOP-7 --json --raw --related --analyze --provider anthropic',
+    );
+    await expect(service.issue({ key: 'SHOP-7; id' })).rejects.toThrow(/issue key/);
+  });
+
+  it('runs the board with a quoted JQL and keeps the reports', async () => {
+    const report = {
+      jql: "project = SHOP AND status != 'Done'",
+      generated_at: '2026-05-26T08:00:00Z',
+      issues: [{}, {}],
+      stale: ['SHOP-1'],
+      summary: null,
+    };
+    const shell = fakeShell({ 'dops-ai board': { stdout: JSON.stringify(report) } });
+    const boardDir = await mkdtemp(join(tmpdir(), 'dops-board-'));
+    const service = new AiService(config, { run: shell.run, boardDir });
+
+    const saved = await service.board({ jql: "project = SHOP AND status != 'Done'", limit: 50 });
+
+    expect(shell.calls[0]?.command).toBe(
+      `dops-ai board --json --limit 50 --jql 'project = SHOP AND status != '\\''Done'\\'''`,
+    );
+    expect(await service.boardReports()).toEqual([
+      {
+        id: saved.id,
+        jql: report.jql,
+        generatedAt: report.generated_at,
+        issues: 2,
+        stale: 1,
+        summarized: false,
+      },
+    ]);
+    expect((await service.boardReport(saved.id))?.stale).toEqual(['SHOP-1']);
+    await service.clearBoardReports();
+    expect(await service.boardReports()).toEqual([]);
+  });
 });

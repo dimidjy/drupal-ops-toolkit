@@ -86,6 +86,41 @@
  * @property {{ summary: string, verdict: 'approve' | 'comment' | 'request_changes', findings: FindingInfo[] }} review
  */
 
+/**
+ * @typedef {object} JiraIssueInfo
+ * @property {string} key
+ * @property {string} summary
+ * @property {string} status
+ * @property {string} issue_type
+ * @property {string | null} [priority]
+ * @property {string | null} [assignee]
+ * @property {string[]} labels
+ * @property {string} description
+ * @property {string | null} [updated]
+ */
+
+/**
+ * @typedef {object} IssueDetailsInfo
+ * @property {JiraIssueInfo} issue
+ * @property {string} url
+ * @property {{ author: string, created: string | null, body: string }[]} comments
+ * @property {JiraIssueInfo[]} related
+ * @property {object | null} raw
+ * @property {{ summary: string, acceptance_criteria: string[], technical_notes: string[],
+ *   risks: string[], questions: string[], suggested_steps: string[] } | null} analysis
+ */
+
+/**
+ * @typedef {object} BoardReportInfo
+ * @property {string} id
+ * @property {string} jql
+ * @property {string} generated_at
+ * @property {Record<string, number>} counts
+ * @property {string[]} stale
+ * @property {JiraIssueInfo[]} issues
+ * @property {{ summary: string, risks: string[], blocked: string[] } | null} summary
+ */
+
 export class ApiError extends Error {
   /**
    * @param {number} status
@@ -226,6 +261,24 @@ export function createApi(token, base = '') {
      * @returns {Promise<ReviewRecord>}
      */
     review: (id) => request(`/api/ai/reviews/${encodeURIComponent(id)}`),
+    /**
+     * @param {{ key: string, related?: boolean, analyze?: boolean, provider?: string }} body
+     * @returns {Promise<IssueDetailsInfo>}
+     */
+    jiraIssue: (body) => request('/api/jira/issue', { method: 'POST', body: JSON.stringify(body) }),
+    /**
+     * @param {{ jql?: string, limit?: number, summarize?: boolean, provider?: string }} body
+     * @returns {Promise<BoardReportInfo>}
+     */
+    jiraBoard: (body) => request('/api/jira/board', { method: 'POST', body: JSON.stringify(body) }),
+    /** @returns {Promise<{ id: string, jql: string, generatedAt: string, issues: number, stale: number, summarized: boolean }[]>} */
+    boardReports: () => request('/api/jira/board/reports'),
+    /**
+     * @param {string} id
+     * @returns {Promise<BoardReportInfo>}
+     */
+    boardReport: (id) => request(`/api/jira/board/reports/${encodeURIComponent(id)}`),
+    clearBoardReports: () => request('/api/jira/board/reports', { method: 'DELETE' }),
     /**
      * Subscribes to a run's events; returns a function that closes the socket.
      *

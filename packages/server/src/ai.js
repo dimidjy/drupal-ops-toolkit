@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expandHome, shellQuote } from '@dops/core';
@@ -57,12 +57,115 @@ export function runShell(command, { cwd, timeoutMs, env = process.env }) {
 export class AiService {
   /**
    * @param {Config} config
-   * @param {{ run?: typeof runShell, storeDir?: string }} [options]
+   * @param {{ run?: typeof runShell, storeDir?: string, boardDir?: string }} [options]
    */
-  constructor(config, { run = runShell, storeDir = '.dops/reviews' } = {}) {
+  constructor(
+    config,
+    { run = runShell, storeDir = '.dops/reviews', boardDir = '.dops/board' } = {},
+  ) {
     this.config = config;
     this.run = run;
     this.storeDir = storeDir;
+    this.boardDir = boardDir;
+  }
+
+  /**
+   * Runs dops-ai with arguments and parses its JSON output.
+   *
+   * @param {string} args Already shell-quoted.
+   */
+  async #json(args) {
+    const { code, stdout, stderr } = await this.run(`${aiCommand(this.config)} ${args}`, {
+      cwd: this.repo,
+      timeoutMs: 5 * 60_000,
+    });
+    if (code !== 0) {
+      throw Object.assign(new Error(lastLine(stderr) || `dops-ai exited with ${code}`), {
+        statusCode: 502,
+      });
+    }
+    return JSON.parse(stdout);
+  }
+
+  /** @param {string} provider */
+  #checkProvider(provider) {
+    if (!['openai', 'anthropic'].includes(provider)) {
+      throw Object.assign(new Error('Unknown provider'), { statusCode: 400 });
+    }
+  }
+
+  /**
+   * A Jira issue with comments, related issues and, if asked, an AI analysis.
+   *
+   * @param {{ key: string, related?: boolean, analyze?: boolean, provider?: string }} request
+   */
+  async issue({ key, related = true, analyze = false, provider = this.config.ai.provider }) {
+    if (!/^[A-Za-z][A-Za-z0-9]{1,9}-\d+$/.test(key)) {
+      throw Object.assign(new Error('Expected an issue key like SHOP-42'), { statusCode: 400 });
+    }
+    this.#checkProvider(provider);
+    const flags = [
+      related ? '--related' : '--no-related',
+      ...(analyze ? ['--analyze', `--provider ${provider}`] : []),
+    ];
+    return this.#json(`issue ${key.toUpperCase()} --json --raw ${flags.join(' ')}`);
+  }
+
+  /**
+   * Board overview for a JQL query (DOPS_JIRA_JQL when empty), saved as a report.
+   *
+   * @param {{ jql?: string, limit?: number, summarize?: boolean, provider?: string }} request
+   */
+  async board({ jql = '', limit = 100, summarize = false, provider = this.config.ai.provider }) {
+    this.#checkProvider(provider);
+    const count = Math.min(Math.max(Math.trunc(limit) || 100, 1), 500);
+    const args = [
+      'board --json',
+      `--limit ${count}`,
+      ...(jql.trim() ? [`--jql ${shellQuote(jql.trim())}`] : []),
+      ...(summarize ? ['--summarize', `--provider ${provider}`] : []),
+    ];
+    const report = await this.#json(args.join(' '));
+    const id = new Date().toISOString().replace(/[:.]/g, '-');
+    await mkdir(this.boardDir, { recursive: true });
+    await writeFile(join(this.boardDir, `${id}.json`), JSON.stringify(report, null, 2));
+    return { id, ...report };
+  }
+
+  /** Saved board reports, newest first. */
+  async boardReports() {
+    if (!existsSync(this.boardDir)) return [];
+    const files = (await readdir(this.boardDir))
+      .filter((f) => f.endsWith('.json'))
+      .sort()
+      .reverse();
+    return Promise.all(
+      files.slice(0, 30).map(async (file) => {
+        const report = JSON.parse(await readFile(join(this.boardDir, file), 'utf8'));
+        return {
+          id: file.replace(/\.json$/, ''),
+          jql: report.jql,
+          generatedAt: report.generated_at,
+          issues: report.issues?.length ?? 0,
+          stale: report.stale?.length ?? 0,
+          summarized: Boolean(report.summary),
+        };
+      }),
+    );
+  }
+
+  /** @param {string} id */
+  async boardReport(id) {
+    if (!/^[\w-]+$/.test(id)) return undefined;
+    try {
+      return { id, ...JSON.parse(await readFile(join(this.boardDir, `${id}.json`), 'utf8')) };
+    } catch {
+      return undefined;
+    }
+  }
+
+  async clearBoardReports() {
+    await rm(this.boardDir, { recursive: true, force: true });
   }
 
   get repo() {

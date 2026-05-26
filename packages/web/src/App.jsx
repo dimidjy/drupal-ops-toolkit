@@ -1,5 +1,7 @@
 import { useState } from 'react';
+import { Board } from './components/Board.jsx';
 import { History } from './components/History.jsx';
+import { Jira } from './components/Jira.jsx';
 import { Params } from './components/Params.jsx';
 import { PipelineEditor } from './components/PipelineEditor.jsx';
 import { Pipelines } from './components/Pipelines.jsx';
@@ -15,6 +17,8 @@ const TABS = /** @type {const} */ ([
   'Parameters',
   'Visual',
   'Review',
+  'Jira',
+  'Board',
   'History',
 ]);
 
@@ -62,6 +66,10 @@ function Dashboard({ api, logout }) {
           <VisualTesting api={api} />
         ) : tab === 'Review' ? (
           <Review api={api} />
+        ) : tab === 'Jira' ? (
+          <Jira api={api} />
+        ) : tab === 'Board' ? (
+          <Board api={api} />
         ) : (
           <History api={api} onOpen={setRunId} />
         )}

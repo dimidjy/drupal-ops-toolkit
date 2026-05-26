@@ -325,6 +325,67 @@ export function buildServer({
     return (await ai.get(id)) ?? reply.code(404).send({ error: 'Review not found' });
   });
 
+  app.post(
+    '/api/jira/issue',
+    {
+      schema: {
+        body: {
+          type: 'object',
+          required: ['key'],
+          additionalProperties: false,
+          properties: {
+            key: { type: 'string' },
+            related: { type: 'boolean' },
+            analyze: { type: 'boolean' },
+            provider: { type: 'string' },
+          },
+        },
+      },
+    },
+    async (request) =>
+      ai.issue(
+        /** @type {{ key: string, related?: boolean, analyze?: boolean, provider?: string }} */ (
+          request.body
+        ),
+      ),
+  );
+
+  app.post(
+    '/api/jira/board',
+    {
+      schema: {
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            jql: { type: 'string', maxLength: 2000 },
+            limit: { type: 'integer' },
+            summarize: { type: 'boolean' },
+            provider: { type: 'string' },
+          },
+        },
+      },
+    },
+    async (request) =>
+      ai.board(
+        /** @type {{ jql?: string, limit?: number, summarize?: boolean, provider?: string }} */ (
+          request.body ?? {}
+        ),
+      ),
+  );
+
+  app.get('/api/jira/board/reports', async () => ai.boardReports());
+
+  app.get('/api/jira/board/reports/:id', async (request, reply) => {
+    const { id } = /** @type {{ id: string }} */ (request.params);
+    return (await ai.boardReport(id)) ?? reply.code(404).send({ error: 'Report not found' });
+  });
+
+  app.delete('/api/jira/board/reports', async (_request, reply) => {
+    await ai.clearBoardReports();
+    return reply.code(204).send();
+  });
+
   const visualJobs = new VisualJobs(config.visual);
 
   app.get('/api/visual/workspace', async () => ({
