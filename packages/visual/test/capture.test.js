@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium } from 'playwright';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { captureSet, httpCredentials, screenshotName } from '../src/capture.js';
+import { captureSet, forEnvironment, httpCredentials, screenshotName } from '../src/capture.js';
 
 describe('screenshotName', () => {
   it('turns paths into file names', () => {
@@ -15,10 +15,28 @@ describe('screenshotName', () => {
   });
 });
 
+describe('forEnvironment', () => {
+  const urlSet = {
+    baseUrl: 'https://stage.example.com',
+    paths: ['/'],
+    environments: { prod: 'https://www.example.com' },
+  };
+
+  it('swaps the base URL', () => {
+    expect(forEnvironment(urlSet, 'prod').baseUrl).toBe('https://www.example.com');
+    expect(forEnvironment(urlSet).baseUrl).toBe('https://stage.example.com');
+  });
+
+  it('lists known environments on a typo', () => {
+    expect(() => forEnvironment(urlSet, 'prd')).toThrow(/Unknown environment "prd" \(prod\)/);
+  });
+});
+
 describe('httpCredentials', () => {
   const urlSet = {
     baseUrl: 'https://stage.example.com',
     paths: ['/'],
+    environments: {},
     httpAuth: { usernameEnv: 'STAGE_USER', passwordEnv: 'STAGE_PASS' },
   };
 
@@ -34,7 +52,9 @@ describe('httpCredentials', () => {
   });
 
   it('is undefined when the set has no auth', () => {
-    expect(httpCredentials({ baseUrl: urlSet.baseUrl, paths: ['/'] }, {})).toBeUndefined();
+    expect(
+      httpCredentials({ baseUrl: urlSet.baseUrl, paths: ['/'], environments: {} }, {}),
+    ).toBeUndefined();
   });
 });
 
@@ -67,7 +87,7 @@ describe.skipIf(!hasBrowser)('captureSet', () => {
 
   it('screenshots every path and reports the HTTP status', async () => {
     const out = await mkdtemp(join(tmpdir(), 'dops-visual-'));
-    const results = await captureSet({ baseUrl, paths: ['/', '/missing'] }, out, {
+    const results = await captureSet({ baseUrl, paths: ['/', '/missing'], environments: {} }, out, {
       viewport: { width: 400, height: 300 },
       fullPage: false,
       hide: [],
@@ -84,6 +104,7 @@ describe.skipIf(!hasBrowser)('captureSet', () => {
     const urlSet = {
       baseUrl,
       paths: ['/private'],
+      environments: {},
       httpAuth: { usernameEnv: 'STAGE_USER', passwordEnv: 'STAGE_PASS' },
     };
     const options = { viewport: { width: 400, height: 300 }, fullPage: false, hide: [] };

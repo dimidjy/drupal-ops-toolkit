@@ -15,7 +15,7 @@ import {
   sshConnector,
 } from '@dops/core';
 import { startServer } from '@dops/server';
-import { captureSet, compareDirs, writeReport } from '@dops/visual';
+import { captureSet, compareDirs, forEnvironment, writeReport } from '@dops/visual';
 import { formatEvent } from './output.js';
 
 /** @import { Config, Target, CommandExecutor } from '@dops/core' */
@@ -225,13 +225,18 @@ export function createProgram(overrides = {}) {
     .command('capture')
     .description('screenshot every page of a URL set')
     .argument('<set>', 'URL set from visual.urlSets')
-    .option('-l, --label <label>', 'name of this capture, e.g. before or after', 'before')
-    .action(async (setName, /** @type {{ label: string }} */ options) => {
+    .option('-l, --label <label>', 'name of this capture (default: environment or "before")')
+    .option('-e, --env <name>', 'capture one of the environments listed in the URL set')
+    .action(async (setName, /** @type {{ label?: string, env?: string }} */ options) => {
       const cfg = await config();
-      const urlSet = cfg.visual.urlSets[setName];
-      if (!urlSet) throw new Error(`Unknown URL set "${setName}"`);
-      const outDir = join(cfg.visual.outputDir, setName, options.label);
-      ctx.write(`${pc.bold(`Capturing ${urlSet.paths.length} pages`)} → ${outDir}\n`);
+      const configured = cfg.visual.urlSets[setName];
+      if (!configured) throw new Error(`Unknown URL set "${setName}"`);
+      const urlSet = forEnvironment(configured, options.env);
+      const label = options.label ?? options.env ?? 'before';
+      const outDir = join(cfg.visual.outputDir, setName, label);
+      ctx.write(
+        `${pc.bold(`Capturing ${urlSet.paths.length} pages`)} of ${urlSet.baseUrl} → ${outDir}\n`,
+      );
       const results = await captureSet(urlSet, outDir, cfg.visual, (result) => {
         const status = result.error
           ? pc.red(result.error.split('\n')[0] ?? 'error')

@@ -1,4 +1,4 @@
-export { captureSet, httpCredentials, screenshotName } from './capture.js';
+export { captureSet, forEnvironment, httpCredentials, screenshotName } from './capture.js';
 export { compareDirs, diffImages } from './compare.js';
 export { renderReport, writeReport } from './report.js';
 export * from './workspace.js';

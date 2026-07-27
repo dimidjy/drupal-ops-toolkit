@@ -19,6 +19,23 @@ export function screenshotName(path) {
 }
 
 /**
+ * The URL set pointed at one of its named environments (or as is without one).
+ *
+ * @param {UrlSet} urlSet
+ * @param {string} [environment]
+ * @returns {UrlSet}
+ */
+export function forEnvironment(urlSet, environment) {
+  if (!environment) return urlSet;
+  const baseUrl = urlSet.environments[environment];
+  if (!baseUrl) {
+    const known = Object.keys(urlSet.environments).join(', ') || 'none defined';
+    throw new Error(`Unknown environment "${environment}" (${known})`);
+  }
+  return { ...urlSet, baseUrl };
+}
+
+/**
  * Resolves basic auth credentials of a URL set from the environment.
  *
  * @param {UrlSet} urlSet

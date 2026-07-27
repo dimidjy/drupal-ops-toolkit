@@ -57,6 +57,8 @@ export const pipelineSchema = z.object({
 const urlSet = z.object({
   baseUrl: z.string().url(),
   paths: z.array(z.string().startsWith('/')).min(1),
+  /** Other deployments of the same site, e.g. { prod: "https://www.example.com" }. */
+  environments: z.record(name, z.string().url()).default({}),
   /** Basic auth for protected environments; names of env variables, not values. */
   httpAuth: z.object({ usernameEnv: z.string(), passwordEnv: z.string() }).strict().optional(),
 });
