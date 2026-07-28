@@ -219,6 +219,84 @@ export function createProgram(overrides = {}) {
       });
     });
 
+  /**
+   * @param {Config} cfg
+   * @param {string} setName
+   */
+  const urlSetOf = (cfg, setName) => {
+    const urlSet = cfg.visual.urlSets[setName];
+    if (!urlSet) throw new Error(`Unknown URL set "${setName}"`);
+    return urlSet;
+  };
+
+  /**
+   * Screenshots a URL set (optionally one of its environments) into `<set>/<label>`.
+   *
+   * @param {Config} cfg
+   * @param {string} setName
+   * @param {string} label
+   * @param {string} [environment]
+   * @returns {Promise<boolean>} false when a page failed to load
+   */
+  const capture = async (cfg, setName, label, environment) => {
+    const urlSet = forEnvironment(urlSetOf(cfg, setName), environment);
+    const outDir = join(cfg.visual.outputDir, setName, label);
+    ctx.write(
+      `${pc.bold(`Capturing ${urlSet.paths.length} pages`)} of ${urlSet.baseUrl} → ${outDir}\n`,
+    );
+    const results = await captureSet(urlSet, outDir, cfg.visual, (result) => {
+      const status = result.error
+        ? pc.red(result.error.split('\n')[0] ?? 'error')
+        : result.status >= 400
+          ? pc.yellow(String(result.status))
+          : pc.green(String(result.status));
+      ctx.write(`  ${pc.dim(`[${label}]`)} ${status} ${result.path}\n`);
+    });
+    return !results.some((result) => result.error);
+  };
+
+  /**
+   * Diffs two captures of a set and writes the HTML report.
+   *
+   * @param {Config} cfg
+   * @param {string} setName
+   * @param {string} before
+   * @param {string} after
+   * @param {string} title
+   * @returns {Promise<number>} number of pages that differ
+   */
+  const compare = async (cfg, setName, before, after, title) => {
+    urlSetOf(cfg, setName);
+    const dir = join(cfg.visual.outputDir, setName);
+    const beforeDir = join(dir, before);
+    const afterDir = join(dir, after);
+    const pair = `${before}-${after}`;
+    const results = await compareDirs(
+      { beforeDir, afterDir, diffDir: join(dir, `diff-${pair}`) },
+      cfg.visual,
+    );
+    if (!results.length) throw new Error(`No screenshots found in ${dir}`);
+    for (const result of results) {
+      const label = {
+        same: pc.green('same   '),
+        changed: pc.red('changed'),
+        added: pc.yellow('added  '),
+        removed: pc.yellow('removed'),
+      }[result.status];
+      const ratio = result.diffFile
+        ? pc.dim(` ${(result.ratio * 100).toFixed(2)}% · ${result.diffPixels} px`)
+        : '';
+      ctx.write(`  ${label} ${result.name}${ratio}\n`);
+    }
+    const changed = results.filter((result) => result.status !== 'same').length;
+    const report = await writeReport(
+      { title, beforeDir, afterDir, beforeLabel: before, afterLabel: after, results },
+      join(dir, `report-${pair}.html`),
+    );
+    ctx.write(`\n${changed} of ${results.length} pages differ · report: ${report}\n`);
+    return changed;
+  };
+
   const visual = program.command('visual').description('screenshot pages and compare them');
 
   visual
@@ -229,23 +307,8 @@ export function createProgram(overrides = {}) {
     .option('-e, --env <name>', 'capture one of the environments listed in the URL set')
     .action(async (setName, /** @type {{ label?: string, env?: string }} */ options) => {
       const cfg = await config();
-      const configured = cfg.visual.urlSets[setName];
-      if (!configured) throw new Error(`Unknown URL set "${setName}"`);
-      const urlSet = forEnvironment(configured, options.env);
       const label = options.label ?? options.env ?? 'before';
-      const outDir = join(cfg.visual.outputDir, setName, label);
-      ctx.write(
-        `${pc.bold(`Capturing ${urlSet.paths.length} pages`)} of ${urlSet.baseUrl} → ${outDir}\n`,
-      );
-      const results = await captureSet(urlSet, outDir, cfg.visual, (result) => {
-        const status = result.error
-          ? pc.red(result.error.split('\n')[0] ?? 'error')
-          : result.status >= 400
-            ? pc.yellow(String(result.status))
-            : pc.green(String(result.status));
-        ctx.write(`  ${status} ${result.path}\n`);
-      });
-      if (results.some((result) => result.error)) process.exitCode = 1;
+      if (!(await capture(cfg, setName, label, options.env))) process.exitCode = 1;
     });
 
   visual
@@ -256,40 +319,25 @@ export function createProgram(overrides = {}) {
     .option('--after <label>', 'capture to check', 'after')
     .action(async (setName, /** @type {{ before: string, after: string }} */ options) => {
       const cfg = await config();
-      if (!cfg.visual.urlSets[setName]) throw new Error(`Unknown URL set "${setName}"`);
-      const dir = join(cfg.visual.outputDir, setName);
-      const beforeDir = join(dir, options.before);
-      const afterDir = join(dir, options.after);
-      const pair = `${options.before}-${options.after}`;
-      const results = await compareDirs(
-        { beforeDir, afterDir, diffDir: join(dir, `diff-${pair}`) },
-        cfg.visual,
-      );
-      if (!results.length) throw new Error(`No screenshots found in ${dir}`);
-      for (const result of results) {
-        const label = {
-          same: pc.green('same   '),
-          changed: pc.red('changed'),
-          added: pc.yellow('added  '),
-          removed: pc.yellow('removed'),
-        }[result.status];
-        const ratio = result.diffFile ? pc.dim(` ${(result.ratio * 100).toFixed(2)}%`) : '';
-        ctx.write(`  ${label} ${result.name}${ratio}\n`);
-      }
-      const changed = results.filter((result) => result.status !== 'same').length;
-      const report = await writeReport(
-        {
-          title: `Visual diff · ${setName}`,
-          beforeDir,
-          afterDir,
-          beforeLabel: options.before,
-          afterLabel: options.after,
-          results,
-        },
-        join(dir, `report-${pair}.html`),
-      );
-      ctx.write(`\n${changed} of ${results.length} pages differ · report: ${report}\n`);
-      if (changed) process.exitCode = 1;
+      const title = `Visual diff · ${setName}`;
+      if (await compare(cfg, setName, options.before, options.after, title)) process.exitCode = 1;
+    });
+
+  visual
+    .command('ab')
+    .description('capture two environments of a URL set side by side and diff them')
+    .argument('<set>', 'URL set from visual.urlSets')
+    .argument('<a>', 'baseline environment, e.g. prod')
+    .argument('<b>', 'environment to check, e.g. stage')
+    .action(async (setName, a, b) => {
+      if (a === b) throw new Error('Pick two different environments');
+      const cfg = await config();
+      const captured = await Promise.all([
+        capture(cfg, setName, a, a),
+        capture(cfg, setName, b, b),
+      ]);
+      const changed = await compare(cfg, setName, a, b, `A/B · ${setName}: ${a} vs ${b}`);
+      if (changed || captured.includes(false)) process.exitCode = 1;
     });
 
   const history = program.command('history').description('show previous runs');
