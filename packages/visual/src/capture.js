@@ -62,11 +62,32 @@ export function httpCredentials(urlSet, env) {
  */
 
 /**
- * Screenshots every path of a URL set into `outDir`.
+ * Opens one URL and screenshots it.
+ *
+ * @param {import('playwright').Page} page
+ * @param {string} url
+ * @param {string} file
+ * @param {Pick<VisualConfig, 'fullPage' | 'hide'>} options
+ * @returns {Promise<number>} HTTP status
+ */
+async function screenshotPage(page, url, file, options) {
+  const response = await page.goto(url, { waitUntil: 'networkidle', timeout: 45_000 });
+  if (options.hide.length) {
+    await page.addStyleTag({
+      content: `${options.hide.join(', ')} { visibility: hidden !important; }`,
+    });
+  }
+  await page.screenshot({ path: file, fullPage: options.fullPage, animations: 'disabled' });
+  return response?.status() ?? 0;
+}
+
+/**
+ * Screenshots every path of a URL set into `outDir`, several tabs at a time.
+ * Results come back in the order of `urlSet.paths`; `onPage` fires as pages finish.
  *
  * @param {UrlSet} urlSet
  * @param {string} outDir
- * @param {Pick<VisualConfig, 'viewport' | 'fullPage' | 'hide'>} options
+ * @param {Pick<VisualConfig, 'viewport' | 'fullPage' | 'hide' | 'concurrency'>} options
  * @param {(result: CaptureResult) => void} [onPage]
  * @param {NodeJS.ProcessEnv} [env]
  * @returns {Promise<CaptureResult[]>}
@@ -84,36 +105,33 @@ export async function captureSet(urlSet, outDir, options, onPage, env = process.
         ? { httpCredentials: { ...credentials, origin: new URL(urlSet.baseUrl).origin } }
         : {}),
     });
-    const page = await context.newPage();
     /** @type {CaptureResult[]} */
-    const results = [];
-    for (const path of urlSet.paths) {
-      const file = join(outDir, screenshotName(path));
-      /** @type {CaptureResult} */
-      let result;
-      try {
-        const response = await page.goto(new URL(path, urlSet.baseUrl).href, {
-          waitUntil: 'networkidle',
-          timeout: 45_000,
-        });
-        if (options.hide.length) {
-          await page.addStyleTag({
-            content: `${options.hide.join(', ')} { visibility: hidden !important; }`,
-          });
+    const results = new Array(urlSet.paths.length);
+    let next = 0;
+
+    const worker = async () => {
+      const page = await context.newPage();
+      while (next < urlSet.paths.length) {
+        const index = next++;
+        const path = /** @type {string} */ (urlSet.paths[index]);
+        const file = join(outDir, screenshotName(path));
+        /** @type {CaptureResult} */
+        let result;
+        try {
+          const url = new URL(path, urlSet.baseUrl).href;
+          result = { path, file, status: await screenshotPage(page, url, file, options) };
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          result = { path, file, status: 0, error: message };
         }
-        await page.screenshot({ path: file, fullPage: options.fullPage, animations: 'disabled' });
-        result = { path, file, status: response?.status() ?? 0 };
-      } catch (error) {
-        result = {
-          path,
-          file,
-          status: 0,
-          error: error instanceof Error ? error.message : String(error),
-        };
+        results[index] = result;
+        onPage?.(result);
       }
-      results.push(result);
-      onPage?.(result);
-    }
+      await page.close();
+    };
+
+    const workers = Math.max(1, Math.min(options.concurrency, urlSet.paths.length));
+    await Promise.all(Array.from({ length: workers }, worker));
     return results;
   } finally {
     await browser.close();

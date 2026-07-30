@@ -73,6 +73,8 @@ const visual = z.object({
   threshold: z.number().min(0).max(1).default(0.1),
   /** A page counts as changed when more than this share of pixels differs. */
   maxDiffRatio: z.number().min(0).max(1).default(0.001),
+  /** Pages captured in parallel (browser tabs). */
+  concurrency: z.number().int().min(1).max(16).default(4),
   /** CSS selectors hidden before the screenshot (carousels, timestamps…). */
   hide: z.array(z.string()).default([]),
   urlSets: z.record(name, urlSet).default({}),

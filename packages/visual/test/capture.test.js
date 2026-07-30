@@ -75,8 +75,11 @@ describe.skipIf(!hasBrowser)('captureSet', () => {
           return;
         }
       }
-      res.writeHead(req.url === '/missing' ? 404 : 200, { 'content-type': 'text/html' });
-      res.end(`<h1 style="font:40px sans-serif">Page ${req.url}</h1>`);
+      const delay = req.url === '/slow' ? 500 : 0;
+      setTimeout(() => {
+        res.writeHead(req.url === '/missing' ? 404 : 200, { 'content-type': 'text/html' });
+        res.end(`<h1 style="font:40px sans-serif">Page ${req.url}</h1>`);
+      }, delay);
     });
     await new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve(undefined)));
     const address = server.address();
@@ -91,12 +94,27 @@ describe.skipIf(!hasBrowser)('captureSet', () => {
       viewport: { width: 400, height: 300 },
       fullPage: false,
       hide: [],
+      concurrency: 2,
     });
     expect(results.map((r) => [r.path, r.status])).toEqual([
       ['/', 200],
       ['/missing', 404],
     ]);
     expect(existsSync(join(out, 'home.png'))).toBe(true);
+  }, 60_000);
+
+  it('captures pages in parallel but returns them in order', async () => {
+    const out = await mkdtemp(join(tmpdir(), 'dops-visual-'));
+    /** @type {string[]} */
+    const finished = [];
+    const results = await captureSet(
+      { baseUrl, paths: ['/slow', '/fast'], environments: {} },
+      out,
+      { viewport: { width: 400, height: 300 }, fullPage: false, hide: [], concurrency: 2 },
+      (result) => finished.push(result.path),
+    );
+    expect(finished).toEqual(['/fast', '/slow']);
+    expect(results.map((r) => r.path)).toEqual(['/slow', '/fast']);
   }, 60_000);
 
   it('sends basic auth credentials from the environment', async () => {
@@ -107,7 +125,12 @@ describe.skipIf(!hasBrowser)('captureSet', () => {
       environments: {},
       httpAuth: { usernameEnv: 'STAGE_USER', passwordEnv: 'STAGE_PASS' },
     };
-    const options = { viewport: { width: 400, height: 300 }, fullPage: false, hide: [] };
+    const options = {
+      viewport: { width: 400, height: 300 },
+      fullPage: false,
+      hide: [],
+      concurrency: 1,
+    };
     const [result] = await captureSet(urlSet, out, options, undefined, {
       STAGE_USER: 'qa',
       STAGE_PASS: 's3cret',
