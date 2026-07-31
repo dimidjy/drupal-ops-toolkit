@@ -76,6 +76,30 @@ URLs, pick a viewport and settle delay, optionally add basic auth or cookies
 the "after" ones and compare. Only the pages that changed are listed, with
 before, after and diff images, twenty at a time.
 
+### A/B: compare two environments
+
+A URL set can list other deployments of the same site. `ab` captures two of
+them in parallel and diffs them, which is handy for checking that staging still
+looks like production before a release:
+
+```yaml
+visual:
+  urlSets:
+    shop:
+      baseUrl: https://staging.example.com
+      paths: [/, /products, /cart]
+      environments:
+        prod: https://www.example.com
+        stage: https://staging.example.com
+```
+
+```bash
+npx dops visual ab shop prod stage    # report-prod-stage.html
+npx dops visual capture shop --env prod
+```
+
+Pages are captured in parallel browser tabs (`visual.concurrency`, default 4).
+
 ## AI review
 
 `python/ai-review` is a small Python CLI (`dops-ai`) that I use around every
