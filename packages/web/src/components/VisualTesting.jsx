@@ -19,6 +19,7 @@ const PRESETS = /** @type {const} */ ([
  * @property {number} settleMs
  * @property {boolean} fullPage
  * @property {boolean} blockTrackers
+ * @property {number} concurrency
  */
 
 /** @type {Settings} */
@@ -29,6 +30,7 @@ const DEFAULTS = {
   settleMs: 600,
   fullPage: true,
   blockTrackers: true,
+  concurrency: 4,
 };
 
 /** @returns {Settings} */
@@ -152,6 +154,7 @@ export function VisualTesting({ api }) {
           viewport: { width: settings.width, height: settings.height },
           fullPage: settings.fullPage,
           settleMs: settings.settleMs,
+          concurrency: settings.concurrency,
           blockTrackers: settings.blockTrackers,
           ...(auth.enabled && auth.username
             ? { auth: { username: auth.username, password: auth.password } }
@@ -264,6 +267,17 @@ export function VisualTesting({ api }) {
               className="narrow"
               value={settings.height}
               onChange={(e) => update({ height: Number(e.target.value) })}
+            />
+          </label>
+          <label className="field">
+            <span>Parallel pages</span>
+            <input
+              type="number"
+              className="narrow"
+              min={1}
+              max={16}
+              value={settings.concurrency}
+              onChange={(e) => update({ concurrency: Number(e.target.value) })}
             />
           </label>
           <label className="field">

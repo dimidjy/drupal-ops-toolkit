@@ -418,6 +418,7 @@ export function buildServer({
             },
             fullPage: { type: 'boolean' },
             settleMs: { type: 'integer', minimum: 0, maximum: 30000 },
+            concurrency: { type: 'integer', minimum: 1, maximum: 16 },
             blockTrackers: { type: 'boolean' },
             auth: {
               type: 'object',
@@ -444,6 +445,7 @@ export function buildServer({
     async (request, reply) => {
       const body = /** @type {{ phase: 'before' | 'after', urls: string[],
         viewport?: { width: number, height: number }, fullPage?: boolean, settleMs?: number,
+        concurrency?: number,
         blockTrackers?: boolean, auth?: { username: string, password: string },
         cookies?: { name: string, value: string, domain?: string, path?: string }[] }} */ (
         request.body
@@ -452,6 +454,7 @@ export function buildServer({
         viewport: body.viewport ?? config.visual.viewport,
         fullPage: body.fullPage ?? config.visual.fullPage,
         settleMs: body.settleMs ?? 600,
+        concurrency: body.concurrency ?? config.visual.concurrency,
         blockTrackers: body.blockTrackers ?? true,
         ...(body.auth?.username ? { credentials: body.auth } : {}),
         ...(body.cookies?.length ? { cookies: body.cookies } : {}),

@@ -121,6 +121,7 @@ describe.skipIf(!existsSync(chromium.executablePath()))('VisualWorkspace.capture
         blockTrackers: true,
         credentials: { username: 'qa', password: 'secret' },
         cookies: [{ name: 'SESSabc', value: 'xyz' }],
+        concurrency: 2,
       },
       (page) => progress.push(page.url),
     );

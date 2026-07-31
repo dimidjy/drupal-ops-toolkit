@@ -39,6 +39,7 @@ export const TRACKER_HOSTS = [
  * @property {{ username: string, password: string }} [credentials] Basic auth.
  * @property {{ name: string, value: string, domain?: string, path?: string }[]} [cookies]
  * @property {boolean} [blockTrackers]
+ * @property {number} [concurrency] Pages captured at the same time (browser tabs).
  *
  * @typedef {object} CapturedPage
  * @property {string} url
@@ -92,6 +93,100 @@ export function parseUrlList(text) {
   return [...new Set(urls)];
 }
 
+/**
+ * Screenshots a list of URLs into `outDir`, several tabs at a time, with
+ * optional basic auth, cookies, tracker blocking and a settle delay.
+ * Results come back in the order of `urls`; `onPage` fires as pages finish.
+ *
+ * @param {string[]} urls
+ * @param {string} outDir
+ * @param {WorkspaceCaptureOptions} options
+ * @param {{ fileName?: (url: string, index: number) => string,
+ *   onPage?: (page: CapturedPage, index: number) => void, signal?: AbortSignal }} [hooks]
+ * @returns {Promise<CapturedPage[]>}
+ */
+export async function captureUrls(urls, outDir, options, hooks = {}) {
+  const { fileName = urlFileName, onPage, signal } = hooks;
+  await mkdir(outDir, { recursive: true });
+  const browser = await chromium.launch();
+  /** @type {CapturedPage[]} */
+  const pages = [];
+  try {
+    const context = await browser.newContext({
+      viewport: options.viewport,
+      ignoreHTTPSErrors: true,
+      reducedMotion: 'reduce',
+      ...(options.credentials ? { httpCredentials: options.credentials } : {}),
+    });
+    if (options.cookies?.length) {
+      // Cookies without a domain apply to every site in the list.
+      const origins = [...new Set(urls.map((url) => new URL(url).origin))];
+      /** @type {{ name: string, value: string, url?: string, domain?: string, path?: string }[]} */
+      const cookies = [];
+      for (const { name, value, domain, path } of options.cookies) {
+        if (domain) cookies.push({ name, value, domain, path: path ?? '/' });
+        else for (const url of origins) cookies.push({ name, value, url });
+      }
+      await context.addCookies(cookies);
+    }
+    if (options.blockTrackers) {
+      await context.route('**/*', (route) =>
+        TRACKER_HOSTS.some((host) => route.request().url().includes(host))
+          ? route.abort()
+          : route.continue(),
+      );
+    }
+
+    let next = 0;
+    const worker = async () => {
+      const page = await context.newPage();
+      while (next < urls.length && !signal?.aborted) {
+        const index = next++;
+        const url = /** @type {string} */ (urls[index]);
+        const file = fileName(url, index);
+        /** @type {CapturedPage} */
+        let result;
+        try {
+          const response = await page.goto(url, { waitUntil: 'networkidle', timeout: 60_000 });
+          if (options.hide?.length) {
+            await page.addStyleTag({
+              content: `${options.hide.join(', ')} { visibility: hidden !important; }`,
+            });
+          }
+          if (options.settleMs) await page.waitForTimeout(options.settleMs);
+          await page.screenshot({
+            path: join(outDir, file),
+            fullPage: options.fullPage,
+            animations: 'disabled',
+          });
+          result = {
+            url,
+            file,
+            status: response?.status() ?? 0,
+            capturedAt: new Date().toISOString(),
+          };
+        } catch (error) {
+          result = {
+            url,
+            file,
+            status: 0,
+            error: (error instanceof Error ? error.message : String(error)).split('\n')[0],
+            capturedAt: new Date().toISOString(),
+          };
+        }
+        pages[index] = result;
+        onPage?.(result, index);
+      }
+      await page.close();
+    };
+    const workers = Math.max(1, Math.min(options.concurrency ?? 1, 16, urls.length));
+    await Promise.all(Array.from({ length: workers }, worker));
+  } finally {
+    await browser.close();
+  }
+  return pages.filter(Boolean);
+}
+
 export class VisualWorkspace {
   /** @param {string} dir */
   constructor(dir) {
@@ -127,76 +222,10 @@ export class VisualWorkspace {
    * @returns {Promise<CapturedPage[]>}
    */
   async capture(phase, urls, options, onPage, signal) {
-    const outDir = this.phaseDir(phase);
-    await mkdir(outDir, { recursive: true });
-    const browser = await chromium.launch();
-    /** @type {CapturedPage[]} */
-    const pages = [];
-    try {
-      const context = await browser.newContext({
-        viewport: options.viewport,
-        ignoreHTTPSErrors: true,
-        reducedMotion: 'reduce',
-        ...(options.credentials ? { httpCredentials: options.credentials } : {}),
-      });
-      if (options.cookies?.length) {
-        // Cookies without a domain apply to every site in the list.
-        const origins = [...new Set(urls.map((url) => new URL(url).origin))];
-        /** @type {{ name: string, value: string, url?: string, domain?: string, path?: string }[]} */
-        const cookies = [];
-        for (const { name, value, domain, path } of options.cookies) {
-          if (domain) cookies.push({ name, value, domain, path: path ?? '/' });
-          else for (const url of origins) cookies.push({ name, value, url });
-        }
-        await context.addCookies(cookies);
-      }
-      if (options.blockTrackers) {
-        await context.route('**/*', (route) =>
-          TRACKER_HOSTS.some((host) => route.request().url().includes(host))
-            ? route.abort()
-            : route.continue(),
-        );
-      }
-      const page = await context.newPage();
-      for (const [index, url] of urls.entries()) {
-        if (signal?.aborted) break;
-        const file = urlFileName(url);
-        /** @type {CapturedPage} */
-        let result;
-        try {
-          const response = await page.goto(url, { waitUntil: 'networkidle', timeout: 60_000 });
-          if (options.hide?.length) {
-            await page.addStyleTag({
-              content: `${options.hide.join(', ')} { visibility: hidden !important; }`,
-            });
-          }
-          if (options.settleMs) await page.waitForTimeout(options.settleMs);
-          await page.screenshot({
-            path: join(outDir, file),
-            fullPage: options.fullPage,
-            animations: 'disabled',
-          });
-          result = {
-            url,
-            file,
-            status: response?.status() ?? 0,
-            capturedAt: new Date().toISOString(),
-          };
-        } catch (error) {
-          result = {
-            url,
-            file,
-            status: 0,
-            error: (error instanceof Error ? error.message : String(error)).split('\n')[0],
-            capturedAt: new Date().toISOString(),
-          };
-        }
-        pages.push(result);
-        onPage?.(result, index);
-      }
-    } finally {
-      await browser.close();
-    }
+    const pages = await captureUrls(urls, this.phaseDir(phase), options, {
+      ...(onPage ? { onPage } : {}),
+      ...(signal ? { signal } : {}),
+    });
     const manifest = await this.manifest();
     for (const page of pages) manifest[phase][page.file] = page;
     await writeFile(this.manifestFile, JSON.stringify(manifest, null, 2));

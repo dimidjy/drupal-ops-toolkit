@@ -60,7 +60,7 @@ export class VisualJobs {
       .capture(
         phase,
         urls,
-        { hide: this.visual.hide, ...options },
+        { hide: this.visual.hide, concurrency: this.visual.concurrency, ...options },
         (page) =>
           job.pages.push({
             url: page.url,
