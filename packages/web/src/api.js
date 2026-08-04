@@ -121,6 +121,33 @@
  * @property {{ summary: string, risks: string[], blocked: string[] } | null} summary
  */
 
+/**
+ * @typedef {object} PairsJobInfo
+ * @property {'running' | 'done' | 'failed' | 'cancelled'} status
+ * @property {number} total
+ * @property {number} captured
+ * @property {{ side: 'A' | 'B', url: string, error: string }[]} errors
+ * @property {string} startedAt
+ * @property {string} [finishedAt]
+ * @property {string} [error]
+ */
+
+/**
+ * @typedef {object} PairInfo
+ * @property {number} index
+ * @property {string} urlA
+ * @property {string} urlB
+ * @property {'identical' | 'different' | 'error'} status
+ * @property {number} [diffPercent]
+ * @property {{ width: number, height: number }} [sizeA]
+ * @property {{ width: number, height: number }} [sizeB]
+ * @property {boolean} [sizeMismatch]
+ * @property {string} [message]
+ * @property {string} [imageA]
+ * @property {string} [imageB]
+ * @property {string} [diffImage]
+ */
+
 export class ApiError extends Error {
   /**
    * @param {number} status
@@ -243,6 +270,13 @@ export function createApi(token, base = '') {
         body: JSON.stringify({ start, limit }),
       }),
     visualClear: () => request('/api/visual/workspace', { method: 'DELETE' }),
+    /** @returns {Promise<{ job: PairsJobInfo | null, result: { createdAt: string, results: PairInfo[] } | null }>} */
+    pairs: () => request('/api/visual/pairs'),
+    /** @param {object} body */
+    startPairs: (body) =>
+      request('/api/visual/pairs', { method: 'POST', body: JSON.stringify(body) }),
+    cancelPairs: () => request('/api/visual/pairs/cancel', { method: 'POST' }),
+    clearPairs: () => request('/api/visual/pairs', { method: 'DELETE' }),
     /**
      * @param {number} [limit]
      * @returns {Promise<{ sha: string, author: string, date: string, subject: string }[]>}

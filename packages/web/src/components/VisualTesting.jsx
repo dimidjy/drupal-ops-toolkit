@@ -1,54 +1,19 @@
 import { useCallback, useEffect, useState } from 'react';
+import {
+  AccessFields,
+  CaptureSettings,
+  DEFAULT_CAPTURE,
+  NO_ACCESS,
+  accessBody,
+  captureBody,
+  loadStored,
+  urlLines,
+} from './CaptureSettings.jsx';
 
 /** @import { Api, CaptureJobInfo, CompareInfo, VisualDiffInfo } from '../api.js' */
 
 const SETTINGS_KEY = 'dops-visual-settings';
 const PAGE = 20;
-const PRESETS = /** @type {const} */ ([
-  ['Desktop', 1920, 1080],
-  ['Laptop', 1440, 900],
-  ['Tablet', 768, 1024],
-  ['Mobile', 390, 844],
-]);
-
-/**
- * @typedef {object} Settings
- * @property {string} urls
- * @property {number} width
- * @property {number} height
- * @property {number} settleMs
- * @property {boolean} fullPage
- * @property {boolean} blockTrackers
- * @property {number} concurrency
- */
-
-/** @type {Settings} */
-const DEFAULTS = {
-  urls: '',
-  width: 1920,
-  height: 1080,
-  settleMs: 600,
-  fullPage: true,
-  blockTrackers: true,
-  concurrency: 4,
-};
-
-/** @returns {Settings} */
-function loadSettings() {
-  try {
-    return { ...DEFAULTS, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? '{}') };
-  } catch {
-    return DEFAULTS;
-  }
-}
-
-/** @param {string} text */
-function urlLines(text) {
-  return text
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line && !line.startsWith('#'));
-}
 
 /** @param {string} [iso] */
 const time = (iso) => (iso ? new Date(iso).toLocaleString() : '');
@@ -103,9 +68,10 @@ function DiffCard({ result }) {
  * @param {{ api: Api }} props
  */
 export function VisualTesting({ api }) {
-  const [settings, setSettings] = useState(loadSettings);
-  const [auth, setAuth] = useState({ enabled: false, username: '', password: '' });
-  const [cookies, setCookies] = useState({ enabled: false, json: '' });
+  const [settings, setSettings] = useState(() =>
+    loadStored(SETTINGS_KEY, { urls: '', ...DEFAULT_CAPTURE }),
+  );
+  const [access, setAccess] = useState(NO_ACCESS);
   const [job, setJob] = useState(/** @type {CaptureJobInfo | null} */ (null));
   const [counts, setCounts] = useState({ before: 0, after: 0 });
   const [compare, setCompare] = useState(
@@ -113,7 +79,7 @@ export function VisualTesting({ api }) {
   );
   const [error, setError] = useState('');
 
-  /** @param {Partial<Settings>} patch */
+  /** @param {Partial<typeof settings>} patch */
   function update(patch) {
     const next = { ...settings, ...patch };
     setSettings(next);
@@ -142,24 +108,12 @@ export function VisualTesting({ api }) {
   async function capture(phase) {
     setError('');
     try {
-      let cookieList;
-      if (cookies.enabled && cookies.json.trim()) {
-        cookieList = JSON.parse(cookies.json);
-        if (!Array.isArray(cookieList)) throw new Error('Cookies must be a JSON array');
-      }
       setJob(
         await api.visualCapture({
           phase,
           urls: urlLines(settings.urls),
-          viewport: { width: settings.width, height: settings.height },
-          fullPage: settings.fullPage,
-          settleMs: settings.settleMs,
-          concurrency: settings.concurrency,
-          blockTrackers: settings.blockTrackers,
-          ...(auth.enabled && auth.username
-            ? { auth: { username: auth.username, password: auth.password } }
-            : {}),
-          ...(cookieList ? { cookies: cookieList } : {}),
+          ...captureBody(settings),
+          ...accessBody(access),
         }),
       );
       if (phase === 'before') setCompare(null);
@@ -231,137 +185,8 @@ export function VisualTesting({ api }) {
           <span className="muted small">{urls.length} URL(s)</span>
         </label>
 
-        <div className="row">
-          <label className="field">
-            <span>Viewport</span>
-            <select
-              value={`${settings.width}x${settings.height}`}
-              onChange={(e) => {
-                const [width, height] = e.target.value.split('x').map(Number);
-                if (width && height) update({ width, height });
-              }}
-            >
-              {PRESETS.map(([label, w, h]) => (
-                <option key={label} value={`${w}x${h}`}>
-                  {label} {w}×{h}
-                </option>
-              ))}
-              {!PRESETS.some(([, w, h]) => w === settings.width && h === settings.height) && (
-                <option value={`${settings.width}x${settings.height}`}>Custom</option>
-              )}
-            </select>
-          </label>
-          <label className="field">
-            <span>Width</span>
-            <input
-              type="number"
-              className="narrow"
-              value={settings.width}
-              onChange={(e) => update({ width: Number(e.target.value) })}
-            />
-          </label>
-          <label className="field">
-            <span>Height</span>
-            <input
-              type="number"
-              className="narrow"
-              value={settings.height}
-              onChange={(e) => update({ height: Number(e.target.value) })}
-            />
-          </label>
-          <label className="field">
-            <span>Parallel pages</span>
-            <input
-              type="number"
-              className="narrow"
-              min={1}
-              max={16}
-              value={settings.concurrency}
-              onChange={(e) => update({ concurrency: Number(e.target.value) })}
-            />
-          </label>
-          <label className="field">
-            <span>Settle delay (ms)</span>
-            <input
-              type="number"
-              className="narrow"
-              min={0}
-              step={100}
-              value={settings.settleMs}
-              onChange={(e) => update({ settleMs: Number(e.target.value) })}
-            />
-          </label>
-        </div>
-
-        <div className="row">
-          <label>
-            <input
-              type="checkbox"
-              checked={settings.fullPage}
-              onChange={(e) => update({ fullPage: e.target.checked })}
-            />{' '}
-            Full page
-          </label>
-          <label>
-            <input
-              type="checkbox"
-              checked={settings.blockTrackers}
-              onChange={(e) => update({ blockTrackers: e.target.checked })}
-            />{' '}
-            Block analytics and cookie-banner scripts
-          </label>
-          <label>
-            <input
-              type="checkbox"
-              checked={auth.enabled}
-              onChange={(e) => setAuth({ ...auth, enabled: e.target.checked })}
-            />{' '}
-            HTTP basic auth
-          </label>
-          <label>
-            <input
-              type="checkbox"
-              checked={cookies.enabled}
-              onChange={(e) => setCookies({ ...cookies, enabled: e.target.checked })}
-            />{' '}
-            Cookies
-          </label>
-        </div>
-
-        {auth.enabled && (
-          <div className="row">
-            <label className="field">
-              <span>Username</span>
-              <input
-                value={auth.username}
-                autoComplete="off"
-                onChange={(e) => setAuth({ ...auth, username: e.target.value })}
-              />
-            </label>
-            <label className="field">
-              <span>Password</span>
-              <input
-                type="password"
-                value={auth.password}
-                autoComplete="off"
-                onChange={(e) => setAuth({ ...auth, password: e.target.value })}
-              />
-            </label>
-            <span className="muted small">Only sent for this capture, never stored.</span>
-          </div>
-        )}
-        {cookies.enabled && (
-          <label className="field">
-            <span>Cookies (JSON array)</span>
-            <textarea
-              rows={3}
-              value={cookies.json}
-              spellCheck={false}
-              onChange={(e) => setCookies({ ...cookies, json: e.target.value })}
-              placeholder={'[{ "name": "SESSabc", "value": "…" }]'}
-            />
-          </label>
-        )}
+        <CaptureSettings settings={settings} update={update} />
+        <AccessFields access={access} update={(patch) => setAccess({ ...access, ...patch })} />
 
         <div className="row">
           <button disabled={running || !urls.length} onClick={() => capture('before')}>

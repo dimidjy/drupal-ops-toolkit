@@ -328,4 +328,17 @@ describe('dashboard API', () => {
     });
     expect(compared.json()).toMatchObject({ total: 0, done: true, results: [] });
   });
+
+  it('validates page compare lists', async () => {
+    const { app } = await setup();
+    const start = (payload) =>
+      app.inject({ method: 'POST', url: '/api/visual/pairs', headers: auth, payload });
+    const uneven = await start({ urlsA: ['https://a.test/'], urlsB: [] });
+    expect(uneven.statusCode).toBe(400);
+    expect((await start({ urlsA: ['javascript:x'], urlsB: ['https://b.test/'] })).statusCode).toBe(
+      400,
+    );
+    const state = (await app.inject({ url: '/api/visual/pairs', headers: auth })).json();
+    expect(state).toEqual({ job: null, result: null });
+  });
 });

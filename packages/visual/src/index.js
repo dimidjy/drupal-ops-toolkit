@@ -2,3 +2,4 @@ export { captureSet, forEnvironment, httpCredentials, screenshotName } from './c
 export { compareDirs, diffImages } from './compare.js';
 export { renderReport, writeReport } from './report.js';
 export * from './workspace.js';
+export * from './pairs.js';

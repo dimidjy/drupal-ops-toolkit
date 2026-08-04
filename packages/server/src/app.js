@@ -7,7 +7,7 @@ import Fastify from 'fastify';
 import { Workspace, isLocalTarget, pipelineParams } from '@dops/core';
 import { MissingParamsError, RunConflictError, RunManager } from './runs.js';
 import { AiService } from './ai.js';
-import { VisualJobs } from './visual.js';
+import { PairJobs, VisualJobs } from './visual.js';
 
 /**
  * @import { Config, Target, CommandExecutor, RunHistory } from '@dops/core'
@@ -489,6 +489,118 @@ export function buildServer({
   app.delete('/api/visual/workspace', async (_request, reply) => {
     await visualJobs.clear();
     return reply.code(204).send();
+  });
+
+  const pairJobs = new PairJobs(config.visual);
+  const sideSchema = {
+    type: 'object',
+    properties: {
+      auth: {
+        type: 'object',
+        required: ['username', 'password'],
+        properties: { username: { type: 'string' }, password: { type: 'string' } },
+      },
+      cookies: {
+        type: 'array',
+        items: {
+          type: 'object',
+          required: ['name', 'value'],
+          properties: {
+            name: { type: 'string' },
+            value: { type: 'string' },
+            domain: { type: 'string' },
+            path: { type: 'string' },
+          },
+        },
+      },
+    },
+  };
+
+  app.get('/api/visual/pairs', async () => ({
+    job: pairJobs.job,
+    result: await pairJobs.result(),
+  }));
+
+  app.post(
+    '/api/visual/pairs',
+    {
+      schema: {
+        body: {
+          type: 'object',
+          required: ['urlsA', 'urlsB'],
+          additionalProperties: false,
+          properties: {
+            urlsA: {
+              type: 'array',
+              items: { type: 'string', pattern: '^https?://' },
+              maxItems: 500,
+            },
+            urlsB: {
+              type: 'array',
+              items: { type: 'string', pattern: '^https?://' },
+              maxItems: 500,
+            },
+            viewport: {
+              type: 'object',
+              required: ['width', 'height'],
+              properties: {
+                width: { type: 'integer', minimum: 200, maximum: 3840 },
+                height: { type: 'integer', minimum: 200, maximum: 4000 },
+              },
+            },
+            fullPage: { type: 'boolean' },
+            settleMs: { type: 'integer', minimum: 0, maximum: 30000 },
+            concurrency: { type: 'integer', minimum: 1, maximum: 16 },
+            blockTrackers: { type: 'boolean' },
+            sideA: sideSchema,
+            sideB: sideSchema,
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      /** @typedef {{ auth?: { username: string, password: string }, cookies?: { name: string, value: string, domain?: string, path?: string }[] }} SideBody */
+      const body = /** @type {{ urlsA: string[], urlsB: string[],
+        viewport?: { width: number, height: number }, fullPage?: boolean, settleMs?: number,
+        concurrency?: number, blockTrackers?: boolean, sideA?: SideBody, sideB?: SideBody }} */ (
+        request.body
+      );
+      /** @param {SideBody | undefined} side */
+      const toSide = (side) => ({
+        ...(side?.auth?.username ? { credentials: side.auth } : {}),
+        ...(side?.cookies?.length ? { cookies: side.cookies } : {}),
+      });
+      const job = pairJobs.start({
+        urlsA: body.urlsA,
+        urlsB: body.urlsB,
+        capture: {
+          viewport: body.viewport ?? config.visual.viewport,
+          fullPage: body.fullPage ?? config.visual.fullPage,
+          settleMs: body.settleMs ?? 600,
+          concurrency: body.concurrency ?? config.visual.concurrency,
+          blockTrackers: body.blockTrackers ?? true,
+        },
+        sideA: toSide(body.sideA),
+        sideB: toSide(body.sideB),
+      });
+      return reply.code(202).send(job);
+    },
+  );
+
+  app.post('/api/visual/pairs/cancel', async () => ({ cancelled: pairJobs.cancel() }));
+
+  app.delete('/api/visual/pairs', async (_request, reply) => {
+    await pairJobs.clear();
+    return reply.code(204).send();
+  });
+
+  const pairsDir = resolve(pairJobs.dir);
+  mkdirSync(pairsDir, { recursive: true });
+  app.register(fastifyStatic, {
+    root: pairsDir,
+    prefix: '/files/pairs/',
+    decorateReply: false,
+    index: false,
   });
 
   const workspaceDir = resolve(visualJobs.workspace.dir);

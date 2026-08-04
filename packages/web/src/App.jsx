@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Board } from './components/Board.jsx';
 import { History } from './components/History.jsx';
 import { Jira } from './components/Jira.jsx';
+import { PageCompare } from './components/PageCompare.jsx';
 import { Params } from './components/Params.jsx';
 import { PipelineEditor } from './components/PipelineEditor.jsx';
 import { Pipelines } from './components/Pipelines.jsx';
@@ -16,6 +17,7 @@ const TABS = /** @type {const} */ ([
   'Editor',
   'Parameters',
   'Visual',
+  'Compare',
   'Review',
   'Jira',
   'Board',
@@ -64,6 +66,8 @@ function Dashboard({ api, logout }) {
           <Params api={api} />
         ) : tab === 'Visual' ? (
           <VisualTesting api={api} />
+        ) : tab === 'Compare' ? (
+          <PageCompare api={api} />
         ) : tab === 'Review' ? (
           <Review api={api} />
         ) : tab === 'Jira' ? (

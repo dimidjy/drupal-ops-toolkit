@@ -100,6 +100,10 @@ npx dops visual capture shop --env prod
 
 Pages are captured in parallel browser tabs (`visual.concurrency`, default 4).
 
+For pages that live under different URLs (an old and a new URL scheme, or two
+different sites), the dashboard's Compare tab takes two URL lists paired line
+by line, each side with its own basic auth and cookies, and diffs every pair.
+
 ## AI review
 
 `python/ai-review` is a small Python CLI (`dops-ai`) that I use around every
