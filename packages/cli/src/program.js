@@ -7,10 +7,12 @@ import {
   RunHistory,
   Workspace,
   describeTarget,
+  dumpFileName,
   loadConfig,
   missingParams,
   paramDefaults,
   parseParamPairs,
+  pullDatabase,
   renderTemplate,
   sshConnector,
 } from '@dops/core';
@@ -158,6 +160,45 @@ export function createProgram(overrides = {}) {
         }
       },
     );
+
+  const db = program.command('db').description('database helpers');
+
+  db.command('pull')
+    .description('stream a gzipped database dump from a target to a local file')
+    .argument('<target>', 'target name')
+    .option('-s, --site <name>', 'site whose parameters fill the dump command')
+    .option('-o, --output <file>', 'where to write the dump')
+    .action(async (targetName, /** @type {{ site?: string, output?: string }} */ options) => {
+      const cfg = await config();
+      const target = cfg.targets[targetName];
+      if (!target) throw new Error(`Unknown target "${targetName}"`);
+      const site = options.site ? cfg.sites[options.site] : {};
+      if (!site) throw new Error(`Unknown site "${options.site}"`);
+      const command = renderTemplate(cfg.db.dumpCommand, {
+        alias: '@self',
+        target: targetName,
+        environment: target.environment ?? targetName,
+        path: target.path,
+        ...site,
+      });
+      const file = options.output ?? dumpFileName(cfg.db.outputDir, targetName, options.site);
+      ctx.write(`${pc.cyan(`[${targetName}]`)} ${pc.dim(command)}\n`);
+      const executor = await ctx.connector(cfg)(targetName, target);
+      try {
+        const result = await pullDatabase({
+          executor,
+          command,
+          cwd: target.path,
+          file,
+          timeoutMs: cfg.db.timeoutSeconds * 1000,
+        });
+        const mb = (result.bytes / 1024 / 1024).toFixed(1);
+        const seconds = (result.durationMs / 1000).toFixed(0);
+        ctx.write(`${pc.green('✔')} ${result.file} (${mb} MB in ${seconds}s)\n`);
+      } finally {
+        await executor.close();
+      }
+    });
 
   program
     .command('exec')

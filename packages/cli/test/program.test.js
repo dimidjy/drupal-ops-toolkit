@@ -1,6 +1,7 @@
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { gzipSync } from 'node:zlib';
 import { afterEach, describe, expect, it } from 'vitest';
 import { RunHistory, parseConfig } from '@dops/core';
 import { createProgram } from '../src/program.js';
@@ -44,8 +45,9 @@ async function run(args, { exitCodes = {} } = {}) {
     history: () => new RunHistory(dir),
     write: (text) => (out += text),
     connector: () => async (name) => ({
-      exec: async (command) => {
+      exec: async (command, options = {}) => {
         commands.push(`${name}: ${command}`);
+        options.stdout?.write(gzipSync('-- dump\n'));
         return { code: exitCodes[name] ?? 0 };
       },
       close: async () => {},
@@ -135,6 +137,16 @@ describe('dops CLI', () => {
 
   it('lists missing parameters with their description', async () => {
     await expect(run(['deploy', 'enable'])).rejects.toThrow(/-p module=…\s+\(Module to enable\)/);
+  });
+
+  it('pulls a database dump with site parameters', async () => {
+    const file = join(await mkdtemp(join(tmpdir(), 'dops-db-')), 'fr.sql.gz');
+    const { commands, out } = await run(['db', 'pull', 'web1', '--site', 'fr', '-o', file]);
+    expect(commands).toEqual([
+      'web1: vendor/bin/drush @fr sql-dump --structure-tables-list=cache,cache_*,flood,sessions,watchdog | gzip -c',
+    ]);
+    expect(out).toContain(file);
+    expect((await stat(file)).size).toBeGreaterThan(0);
   });
 
   it('rejects unknown pipelines', async () => {

@@ -10,6 +10,7 @@ const { Client } = ssh2;
  * @property {string} [cwd]
  * @property {number} [timeoutMs]
  * @property {(chunk: string) => void} [onStdout]
+ * @property {NodeJS.WritableStream} [stdout] Raw stdout (binary safe); replaces onStdout.
  * @property {(chunk: string) => void} [onStderr]
  * @property {AbortSignal} [signal]
  */
@@ -185,7 +186,11 @@ export class SshExecutor {
           }, timeoutMs);
         }
         options.signal?.addEventListener('abort', abort, { once: true });
-        channel.on('data', (/** @type {Buffer} */ data) => options.onStdout?.(data.toString()));
+        if (options.stdout) {
+          channel.pipe(options.stdout, { end: false });
+        } else {
+          channel.on('data', (/** @type {Buffer} */ data) => options.onStdout?.(data.toString()));
+        }
         channel.stderr.on('data', (/** @type {Buffer} */ data) =>
           options.onStderr?.(data.toString()),
         );

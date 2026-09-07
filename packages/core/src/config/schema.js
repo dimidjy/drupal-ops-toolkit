@@ -80,6 +80,17 @@ const visual = z.object({
   urlSets: z.record(name, urlSet).default({}),
 });
 
+const db = z.object({
+  /** Writes a gzipped dump to stdout; runs in the target's path with site {placeholders}. */
+  dumpCommand: z
+    .string()
+    .default(
+      'vendor/bin/drush {alias} sql-dump --structure-tables-list=cache,cache_*,flood,sessions,watchdog | gzip -c',
+    ),
+  outputDir: z.string().default('.dops/db'),
+  timeoutSeconds: z.number().int().positive().default(3600),
+});
+
 /** Per-site values available to steps as {placeholders}. */
 const site = z.record(z.string(), z.union([z.string(), z.number(), z.boolean()]));
 
@@ -118,6 +129,7 @@ export const configSchema = z
         workspaceFile: z.string().default('.dops/workspace.json'),
       })
       .default({}),
+    db: db.default({}),
   })
   .superRefine((config, ctx) => {
     for (const [targetName, t] of Object.entries(config.targets)) {
@@ -193,4 +205,5 @@ export function paramDefaults(config) {
   );
 }
 /** @typedef {z.infer<typeof visual>} VisualConfig */
+/** @typedef {z.infer<typeof db>} DbConfig */
 /** @typedef {z.infer<typeof urlSet>} UrlSet */

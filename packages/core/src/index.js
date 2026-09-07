@@ -8,3 +8,4 @@ export * from './pipeline/runner.js';
 export * from './history/store.js';
 export * from './ssh/connect.js';
 export * from './local/executor.js';
+export * from './db/pull.js';
