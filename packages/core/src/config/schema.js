@@ -88,6 +88,8 @@ const db = z.object({
       'vendor/bin/drush {alias} sql-dump --structure-tables-list=cache,cache_*,flood,sessions,watchdog | gzip -c',
     ),
   outputDir: z.string().default('.dops/db'),
+  /** Local command for `db pull --import`; {file} is the downloaded dump. */
+  importCommand: z.string().default('ddev import-db --file={file}'),
   timeoutSeconds: z.number().int().positive().default(3600),
 });
 

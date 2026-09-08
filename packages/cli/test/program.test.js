@@ -39,11 +39,16 @@ pipelines:
 async function run(args, { exitCodes = {} } = {}) {
   let out = '';
   const commands = [];
+  const local = [];
   const dir = await mkdtemp(join(tmpdir(), 'dops-cli-'));
   const program = createProgram({
     loadConfig: async () => config,
     history: () => new RunHistory(dir),
     write: (text) => (out += text),
+    runLocal: async (command) => {
+      local.push(command);
+      return 0;
+    },
     connector: () => async (name) => ({
       exec: async (command, options = {}) => {
         commands.push(`${name}: ${command}`);
@@ -55,7 +60,7 @@ async function run(args, { exitCodes = {} } = {}) {
   });
   program.exitOverride();
   await program.parseAsync(['node', 'dops', ...args]);
-  return { out, commands, history: new RunHistory(dir) };
+  return { out, commands, local, history: new RunHistory(dir) };
 }
 
 afterEach(() => {
@@ -147,6 +152,12 @@ describe('dops CLI', () => {
     ]);
     expect(out).toContain(file);
     expect((await stat(file)).size).toBeGreaterThan(0);
+  });
+
+  it('imports the pulled dump locally with --import', async () => {
+    const file = join(await mkdtemp(join(tmpdir(), 'dops-db-')), 'prod dump.sql.gz');
+    const { local } = await run(['db', 'pull', 'web1', '-o', file, '--import']);
+    expect(local).toEqual([`ddev import-db --file='${file}'`]);
   });
 
   it('rejects unknown pipelines', async () => {

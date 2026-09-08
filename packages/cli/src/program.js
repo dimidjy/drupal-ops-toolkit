@@ -1,3 +1,4 @@
+import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { Command } from 'commander';
 import pc from 'picocolors';
@@ -14,6 +15,7 @@ import {
   parseParamPairs,
   pullDatabase,
   renderTemplate,
+  shellQuote,
   sshConnector,
 } from '@dops/core';
 import { startServer } from '@dops/server';
@@ -30,6 +32,7 @@ import { formatEvent } from './output.js';
  * @property {(config: Config) => (name: string, target: Target) => Promise<CommandExecutor>} connector
  * @property {(dir?: string) => RunHistory} history
  * @property {(text: string) => void} write
+ * @property {(command: string) => Promise<number>} runLocal Runs a shell command on this machine.
  */
 
 /** @type {Context} */
@@ -43,6 +46,12 @@ export const defaultContext = {
   connector: (config) => sshConnector(config),
   history: (dir) => new RunHistory(dir),
   write: (text) => process.stdout.write(text),
+  runLocal: (command) =>
+    new Promise((resolve, reject) => {
+      spawn(command, { shell: true, stdio: 'inherit' })
+        .on('error', reject)
+        .on('close', (code) => resolve(code ?? 1));
+    }),
 };
 
 /**
@@ -168,37 +177,49 @@ export function createProgram(overrides = {}) {
     .argument('<target>', 'target name')
     .option('-s, --site <name>', 'site whose parameters fill the dump command')
     .option('-o, --output <file>', 'where to write the dump')
-    .action(async (targetName, /** @type {{ site?: string, output?: string }} */ options) => {
-      const cfg = await config();
-      const target = cfg.targets[targetName];
-      if (!target) throw new Error(`Unknown target "${targetName}"`);
-      const site = options.site ? cfg.sites[options.site] : {};
-      if (!site) throw new Error(`Unknown site "${options.site}"`);
-      const command = renderTemplate(cfg.db.dumpCommand, {
-        alias: '@self',
-        target: targetName,
-        environment: target.environment ?? targetName,
-        path: target.path,
-        ...site,
-      });
-      const file = options.output ?? dumpFileName(cfg.db.outputDir, targetName, options.site);
-      ctx.write(`${pc.cyan(`[${targetName}]`)} ${pc.dim(command)}\n`);
-      const executor = await ctx.connector(cfg)(targetName, target);
-      try {
-        const result = await pullDatabase({
-          executor,
-          command,
-          cwd: target.path,
-          file,
-          timeoutMs: cfg.db.timeoutSeconds * 1000,
+    .option('-i, --import', 'import the dump locally afterwards (db.importCommand)')
+    .action(
+      async (
+        targetName,
+        /** @type {{ site?: string, output?: string, import?: boolean }} */ options,
+      ) => {
+        const cfg = await config();
+        const target = cfg.targets[targetName];
+        if (!target) throw new Error(`Unknown target "${targetName}"`);
+        const site = options.site ? cfg.sites[options.site] : {};
+        if (!site) throw new Error(`Unknown site "${options.site}"`);
+        const command = renderTemplate(cfg.db.dumpCommand, {
+          alias: '@self',
+          target: targetName,
+          environment: target.environment ?? targetName,
+          path: target.path,
+          ...site,
         });
-        const mb = (result.bytes / 1024 / 1024).toFixed(1);
-        const seconds = (result.durationMs / 1000).toFixed(0);
-        ctx.write(`${pc.green('✔')} ${result.file} (${mb} MB in ${seconds}s)\n`);
-      } finally {
-        await executor.close();
-      }
-    });
+        const file = options.output ?? dumpFileName(cfg.db.outputDir, targetName, options.site);
+        ctx.write(`${pc.cyan(`[${targetName}]`)} ${pc.dim(command)}\n`);
+        const executor = await ctx.connector(cfg)(targetName, target);
+        try {
+          const result = await pullDatabase({
+            executor,
+            command,
+            cwd: target.path,
+            file,
+            timeoutMs: cfg.db.timeoutSeconds * 1000,
+          });
+          const mb = (result.bytes / 1024 / 1024).toFixed(1);
+          const seconds = (result.durationMs / 1000).toFixed(0);
+          ctx.write(`${pc.green('✔')} ${result.file} (${mb} MB in ${seconds}s)\n`);
+        } finally {
+          await executor.close();
+        }
+        if (options.import) {
+          const importCommand = renderTemplate(cfg.db.importCommand, { file: shellQuote(file) });
+          ctx.write(`${pc.bold('Importing')} ${pc.dim(importCommand)}\n`);
+          const code = await ctx.runLocal(importCommand);
+          if (code !== 0) throw new Error(`Import failed with exit code ${code}`);
+        }
+      },
+    );
 
   program
     .command('exec')
