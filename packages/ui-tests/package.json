@@ -1,0 +1,14 @@
+{
+  "name": "@dops/ui-tests",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Run Playwright suites from the config, keep their history, schedule them",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "dependencies": {
+    "@dops/core": "^0.1.0",
+    "@playwright/test": "^1.64.1"
+  }
+}

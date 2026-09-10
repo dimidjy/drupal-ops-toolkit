@@ -54,13 +54,15 @@ export const pipelineSchema = z.object({
   steps: z.array(step).min(1),
 });
 
+/** Basic auth for protected environments; names of env variables, not values. */
+const httpAuth = z.object({ usernameEnv: z.string(), passwordEnv: z.string() }).strict();
+
 const urlSet = z.object({
   baseUrl: z.string().url(),
   paths: z.array(z.string().startsWith('/')).min(1),
   /** Other deployments of the same site, e.g. { prod: "https://www.example.com" }. */
   environments: z.record(name, z.string().url()).default({}),
-  /** Basic auth for protected environments; names of env variables, not values. */
-  httpAuth: z.object({ usernameEnv: z.string(), passwordEnv: z.string() }).strict().optional(),
+  httpAuth: httpAuth.optional(),
 });
 
 const visual = z.object({
@@ -78,6 +80,21 @@ const visual = z.object({
   /** CSS selectors hidden before the screenshot (carousels, timestamps…). */
   hide: z.array(z.string()).default([]),
   urlSets: z.record(name, urlSet).default({}),
+});
+
+const uiSuite = z.object({
+  /** Folder with Playwright *.spec.js files, relative to the working directory. */
+  testDir: z.string().min(1),
+  baseUrl: z.string().url(),
+  retries: z.number().int().min(0).default(1),
+  workers: z.number().int().positive().default(2),
+  timeoutSeconds: z.number().int().positive().default(30),
+  httpAuth: httpAuth.optional(),
+});
+
+const uiTests = z.object({
+  outputDir: z.string().default('.dops/ui-tests'),
+  suites: z.record(name, uiSuite).default({}),
 });
 
 const db = z.object({
@@ -132,6 +149,7 @@ export const configSchema = z
       })
       .default({}),
     db: db.default({}),
+    uiTests: uiTests.default({}),
   })
   .superRefine((config, ctx) => {
     for (const [targetName, t] of Object.entries(config.targets)) {
@@ -208,4 +226,6 @@ export function paramDefaults(config) {
 }
 /** @typedef {z.infer<typeof visual>} VisualConfig */
 /** @typedef {z.infer<typeof db>} DbConfig */
+/** @typedef {z.infer<typeof uiTests>} UiTestsConfig */
+/** @typedef {z.infer<typeof uiSuite>} UiSuite */
 /** @typedef {z.infer<typeof urlSet>} UrlSet */
