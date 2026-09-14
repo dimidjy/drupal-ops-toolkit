@@ -19,8 +19,9 @@ import {
   sshConnector,
 } from '@dops/core';
 import { startServer } from '@dops/server';
+import { TestHistory, runSuite } from '@dops/ui-tests';
 import { captureSet, compareDirs, forEnvironment, writeReport } from '@dops/visual';
-import { formatEvent } from './output.js';
+import { formatEvent, formatTestRun } from './output.js';
 
 /** @import { Config, Target, CommandExecutor } from '@dops/core' */
 
@@ -400,6 +401,78 @@ export function createProgram(overrides = {}) {
       ]);
       const changed = await compare(cfg, setName, a, b, `A/B · ${setName}: ${a} vs ${b}`);
       if (changed || captured.includes(false)) process.exitCode = 1;
+    });
+
+  const tests = program.command('test').description('run Playwright UI test suites');
+
+  tests
+    .command('list')
+    .description('list the configured suites')
+    .action(async () => {
+      const { uiTests } = await config();
+      for (const [name, suite] of Object.entries(uiTests.suites)) {
+        ctx.write(`${pc.bold(name)}  ${pc.dim(`${suite.testDir} → ${suite.baseUrl}`)}\n`);
+      }
+    });
+
+  tests
+    .command('run')
+    .description('run one or more suites and record the results')
+    .argument('<suites...>', 'suite names')
+    .option('-q, --quiet', 'only print the summary')
+    .action(async (/** @type {string[]} */ names, /** @type {{ quiet?: boolean }} */ options) => {
+      const { uiTests } = await config();
+      for (const name of names) {
+        if (!uiTests.suites[name]) throw new Error(`Unknown suite "${name}"`);
+      }
+      const store = new TestHistory(uiTests.outputDir);
+      let failed = false;
+      for (const name of names) {
+        const suite = /** @type {import('@dops/core').UiSuite} */ (uiTests.suites[name]);
+        ctx.write(`${pc.bold(`Running ${name}`)} ${pc.dim(`against ${suite.baseUrl}`)}\n`);
+        const run = await runSuite(name, suite, {
+          outputDir: uiTests.outputDir,
+          ...(options.quiet ? {} : { onOutput: (chunk) => ctx.write(pc.dim(chunk)) }),
+        });
+        await store.append(run);
+        ctx.write(formatTestRun(run));
+        failed ||= run.status !== 'passed';
+      }
+      if (failed) process.exitCode = 1;
+    });
+
+  tests
+    .command('history')
+    .description('list recent test runs')
+    .option('-s, --suite <name>', 'only runs of this suite')
+    .option('-l, --limit <n>', 'number of runs', '20')
+    .action(async (/** @type {{ suite?: string, limit: string }} */ options) => {
+      const { uiTests } = await config();
+      const runs = await new TestHistory(uiTests.outputDir).list({
+        limit: Number(options.limit),
+        ...(options.suite ? { suite: options.suite } : {}),
+      });
+      if (!runs.length) ctx.write('No test runs yet.\n');
+      for (const run of runs) {
+        const status = run.status === 'passed' ? pc.green(run.status) : pc.red(run.status);
+        const counts = run.stats
+          ? `${run.stats.passed}/${run.stats.passed + run.stats.failed}`
+          : '';
+        ctx.write(
+          `${pc.dim(run.startedAt.slice(0, 16).replace('T', ' '))}  ${status.padEnd(16)} ${run.suite} ${counts}  ${pc.dim(run.id)}\n`,
+        );
+      }
+    });
+
+  tests
+    .command('show')
+    .description('print the failures and report location of a test run')
+    .argument('<id>', 'run id (from "dops test history")')
+    .action(async (id) => {
+      const { uiTests } = await config();
+      const run = await new TestHistory(uiTests.outputDir).get(id);
+      if (!run) throw new Error(`No test run with id ${id}`);
+      ctx.write(formatTestRun(run));
     });
 
   const history = program.command('history').description('show previous runs');

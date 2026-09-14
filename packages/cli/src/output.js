@@ -34,3 +34,33 @@ export function formatEvent(event) {
     }
   }
 }
+
+/**
+ * Summary of a UI test run: counts, failing tests and where the report is.
+ *
+ * @param {import('@dops/ui-tests').UiTestRun} run
+ */
+export function formatTestRun(run) {
+  if (run.status === 'error') return `${pc.red('✖ error')} ${run.error ?? ''}\n`;
+  const stats = run.stats;
+  const seconds = stats ? (stats.durationMs / 1000).toFixed(0) : '?';
+  const counts = stats
+    ? [
+        pc.green(`${stats.passed} passed`),
+        stats.failed ? pc.red(`${stats.failed} failed`) : '',
+        stats.flaky ? pc.yellow(`${stats.flaky} flaky`) : '',
+        stats.skipped ? pc.dim(`${stats.skipped} skipped`) : '',
+      ]
+        .filter(Boolean)
+        .join(', ')
+    : '';
+  const lines = [
+    `${run.status === 'passed' ? pc.green('✔') : pc.red('✖')} ${run.suite}: ${counts} (${seconds}s)`,
+  ];
+  for (const failure of run.failures) {
+    lines.push(`  ${pc.red('✖')} ${failure.title} ${pc.dim(`${failure.file}:${failure.line}`)}`);
+    lines.push(`    ${failure.error}`);
+  }
+  lines.push(pc.dim(`  report: ${run.reportDir}/index.html`));
+  return `${lines.join('\n')}\n`;
+}
