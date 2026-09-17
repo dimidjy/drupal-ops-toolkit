@@ -19,7 +19,7 @@ import {
   sshConnector,
 } from '@dops/core';
 import { startServer } from '@dops/server';
-import { TestHistory, runSuite } from '@dops/ui-tests';
+import { TestHistory, runSuite, startScheduler } from '@dops/ui-tests';
 import { captureSet, compareDirs, forEnvironment, writeReport } from '@dops/visual';
 import { formatEvent, formatTestRun } from './output.js';
 
@@ -439,6 +439,34 @@ export function createProgram(overrides = {}) {
         failed ||= run.status !== 'passed';
       }
       if (failed) process.exitCode = 1;
+    });
+
+  tests
+    .command('schedule')
+    .description('keep running and start suites on their uiTests.schedules')
+    .action(async () => {
+      const { uiTests } = await config();
+      if (!uiTests.schedules.length) throw new Error('No uiTests.schedules configured');
+      const store = new TestHistory(uiTests.outputDir);
+      const scheduler = startScheduler(uiTests.schedules, {
+        run: async (name) => {
+          const suite = /** @type {import('@dops/core').UiSuite} */ (uiTests.suites[name]);
+          ctx.write(`${pc.dim(new Date().toISOString())} ${pc.bold(`Running ${name}`)}\n`);
+          const run = await runSuite(name, suite, { outputDir: uiTests.outputDir });
+          await store.append(run);
+          ctx.write(formatTestRun(run));
+        },
+        onSkip: (name) => ctx.write(pc.yellow(`${name} is still running, skipping this trigger\n`)),
+        onError: (name, error) =>
+          ctx.write(pc.red(`${name}: ${error instanceof Error ? error.message : error}\n`)),
+      });
+      for (const { schedule, task } of scheduler.scheduled) {
+        const next = task.getNextRun()?.toLocaleString() ?? 'never';
+        ctx.write(`${pc.bold(schedule.suite)}  ${schedule.cron}  ${pc.dim(`next: ${next}`)}\n`);
+      }
+      ctx.write(pc.dim('Waiting for schedules, Ctrl+C to stop.\n'));
+      await new Promise((resolve) => process.once('SIGINT', resolve));
+      await scheduler.stop();
     });
 
   tests

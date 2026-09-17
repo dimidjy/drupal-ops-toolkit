@@ -137,10 +137,13 @@ export async function runSuite(name, suite, { outputDir, onOutput, env = process
       error: `Playwright exited with ${code} without a report`,
     };
   }
+  // A non-zero exit without failing tests means Playwright was interrupted or broke.
+  const interrupted = !summary.stats.failed && code !== 0;
   return {
     ...base,
-    status: summary.stats.failed ? 'failed' : 'passed',
+    status: summary.stats.failed ? 'failed' : interrupted ? 'error' : 'passed',
     finishedAt: new Date().toISOString(),
     ...summary,
+    ...(interrupted ? { error: `Playwright exited with ${code}` } : {}),
   };
 }

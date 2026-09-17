@@ -92,9 +92,17 @@ const uiSuite = z.object({
   httpAuth: httpAuth.optional(),
 });
 
+const uiSchedule = z.object({
+  suite: name,
+  /** Cron expression, e.g. "0 7 * * 1-5" for weekdays at 07:00. */
+  cron: z.string().min(1),
+  timezone: z.string().optional(),
+});
+
 const uiTests = z.object({
   outputDir: z.string().default('.dops/ui-tests'),
   suites: z.record(name, uiSuite).default({}),
+  schedules: z.array(uiSchedule).default([]),
 });
 
 const db = z.object({
@@ -180,6 +188,15 @@ export const configSchema = z
         }
       });
     }
+    config.uiTests.schedules.forEach((schedule, i) => {
+      if (!config.uiTests.suites[schedule.suite]) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['uiTests', 'schedules', i, 'suite'],
+          message: `unknown suite "${schedule.suite}"`,
+        });
+      }
+    });
   });
 
 /** @typedef {z.infer<typeof configSchema>} Config */
@@ -228,4 +245,5 @@ export function paramDefaults(config) {
 /** @typedef {z.infer<typeof db>} DbConfig */
 /** @typedef {z.infer<typeof uiTests>} UiTestsConfig */
 /** @typedef {z.infer<typeof uiSuite>} UiSuite */
+/** @typedef {z.infer<typeof uiSchedule>} UiSchedule */
 /** @typedef {z.infer<typeof urlSet>} UrlSet */
