@@ -103,6 +103,14 @@ const uiTests = z.object({
   outputDir: z.string().default('.dops/ui-tests'),
   suites: z.record(name, uiSuite).default({}),
   schedules: z.array(uiSchedule).default([]),
+  /** Posts { text } (Slack-compatible) to the URL in this env variable. */
+  notify: z
+    .object({
+      webhookEnv: z.string(),
+      /** "failures" also reports when a failing suite passes again. */
+      when: z.enum(['failures', 'always']).default('failures'),
+    })
+    .optional(),
 });
 
 const db = z.object({
@@ -246,4 +254,5 @@ export function paramDefaults(config) {
 /** @typedef {z.infer<typeof uiTests>} UiTestsConfig */
 /** @typedef {z.infer<typeof uiSuite>} UiSuite */
 /** @typedef {z.infer<typeof uiSchedule>} UiSchedule */
+/** @typedef {z.infer<typeof uiTests>['notify']} UiNotify */
 /** @typedef {z.infer<typeof urlSet>} UrlSet */

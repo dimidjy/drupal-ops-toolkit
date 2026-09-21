@@ -19,7 +19,7 @@ import {
   sshConnector,
 } from '@dops/core';
 import { startServer } from '@dops/server';
-import { TestHistory, runSuite, startScheduler } from '@dops/ui-tests';
+import { TestHistory, notifyRun, runSuite, startScheduler } from '@dops/ui-tests';
 import { captureSet, compareDirs, forEnvironment, writeReport } from '@dops/visual';
 import { formatEvent, formatTestRun } from './output.js';
 
@@ -403,6 +403,27 @@ export function createProgram(overrides = {}) {
       if (changed || captured.includes(false)) process.exitCode = 1;
     });
 
+  /**
+   * Stores a finished run and sends the webhook notification if configured.
+   *
+   * @param {import('@dops/core').UiTestsConfig} uiTests
+   * @param {import('@dops/ui-tests').UiTestRun} run
+   */
+  const recordTestRun = async (uiTests, run) => {
+    const store = new TestHistory(uiTests.outputDir);
+    const [previous] = await store.list({ suite: run.suite, limit: 1 });
+    await store.append(run);
+    ctx.write(formatTestRun(run));
+    try {
+      if (await notifyRun(run, previous, uiTests.notify))
+        ctx.write(pc.dim('  notification sent\n'));
+    } catch (error) {
+      ctx.write(
+        pc.yellow(`  notification failed: ${error instanceof Error ? error.message : error}\n`),
+      );
+    }
+  };
+
   const tests = program.command('test').description('run Playwright UI test suites');
 
   tests
@@ -425,7 +446,6 @@ export function createProgram(overrides = {}) {
       for (const name of names) {
         if (!uiTests.suites[name]) throw new Error(`Unknown suite "${name}"`);
       }
-      const store = new TestHistory(uiTests.outputDir);
       let failed = false;
       for (const name of names) {
         const suite = /** @type {import('@dops/core').UiSuite} */ (uiTests.suites[name]);
@@ -434,8 +454,7 @@ export function createProgram(overrides = {}) {
           outputDir: uiTests.outputDir,
           ...(options.quiet ? {} : { onOutput: (chunk) => ctx.write(pc.dim(chunk)) }),
         });
-        await store.append(run);
-        ctx.write(formatTestRun(run));
+        await recordTestRun(uiTests, run);
         failed ||= run.status !== 'passed';
       }
       if (failed) process.exitCode = 1;
@@ -447,14 +466,12 @@ export function createProgram(overrides = {}) {
     .action(async () => {
       const { uiTests } = await config();
       if (!uiTests.schedules.length) throw new Error('No uiTests.schedules configured');
-      const store = new TestHistory(uiTests.outputDir);
       const scheduler = startScheduler(uiTests.schedules, {
         run: async (name) => {
           const suite = /** @type {import('@dops/core').UiSuite} */ (uiTests.suites[name]);
           ctx.write(`${pc.dim(new Date().toISOString())} ${pc.bold(`Running ${name}`)}\n`);
           const run = await runSuite(name, suite, { outputDir: uiTests.outputDir });
-          await store.append(run);
-          ctx.write(formatTestRun(run));
+          await recordTestRun(uiTests, run);
         },
         onSkip: (name) => ctx.write(pc.yellow(`${name} is still running, skipping this trigger\n`)),
         onError: (name, error) =>
