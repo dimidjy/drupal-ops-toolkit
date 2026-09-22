@@ -121,3 +121,16 @@ visual:
       httpAuth:
         usernameEnv: STAGING_HTTP_USER
         passwordEnv: STAGING_HTTP_PASS
+
+uiTests:
+  outputDir: .dops/ui-tests
+  suites:
+    smoke:
+      testDir: examples/ui-tests/smoke
+      baseUrl: https://hdcr.ddev.site
+      retries: 1
+  schedules:
+    - suite: smoke
+      cron: '0 7 * * 1-5' # weekdays before stand-up
+  notify:
+    webhookEnv: DOPS_WEBHOOK_URL
