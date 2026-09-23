@@ -32,6 +32,18 @@ A target with `local: true` runs its steps in a shell on this machine, in its
 `path`. That's handy for local routines like `ddev drush cim` after switching
 branches, with the same history and live output as remote runs.
 
+## Database
+
+```bash
+npx dops db pull prod --site fr            # .dops/db/prod-fr-<time>.sql.gz
+npx dops db pull staging --import          # and load it into the local DDEV site
+```
+
+The dump runs `db.dumpCommand` on the target (by default `drush sql-dump`
+without cache, session and watchdog data, gzipped) and streams it through the
+bastion straight into a local file. The file is only kept if the command
+succeeded and the output really is gzip.
+
 ## Dashboard
 
 ```bash
@@ -103,6 +115,31 @@ Pages are captured in parallel browser tabs (`visual.concurrency`, default 4).
 For pages that live under different URLs (an old and a new URL scheme, or two
 different sites), the dashboard's Compare tab takes two URL lists paired line
 by line, each side with its own basic auth and cookies, and diffs every pair.
+
+## UI tests
+
+Playwright suites are plain `*.spec.js` folders listed in the config; dops
+generates the Playwright config per run (base URL, retries, basic auth from
+env) and keeps every run's HTML report and traces.
+
+```bash
+npx dops test run smoke             # counts, failing tests, report path
+npx dops test history
+npx dops test show <run-id>
+npx dops test schedule              # run suites on uiTests.schedules (cron)
+```
+
+`examples/ui-tests/smoke` checks the demo site: home page without PHP or JS
+errors, login form, JSON:API. With `uiTests.notify` failing runs (and
+recoveries) are posted to a Slack-compatible webhook.
+
+## Configuration and secrets
+
+Everything lives in `dops.config.yml` (see
+[examples/dops.config.example.yml](examples/dops.config.example.yml)). Secrets
+never go in that file: SSH uses keys or the agent, and passwords, tokens and
+webhook URLs are read from environment variables, optionally from a `.env`
+file (see [.env.example](.env.example); shell variables win).
 
 ## AI review
 
