@@ -7,6 +7,7 @@ import Fastify from 'fastify';
 import { Workspace, isLocalTarget, pipelineParams } from '@dops/core';
 import { MissingParamsError, RunConflictError, RunManager } from './runs.js';
 import { AiService } from './ai.js';
+import { TestRunManager, listVisualReports } from './tests.js';
 import { PairJobs, VisualJobs } from './visual.js';
 
 /**
@@ -24,6 +25,7 @@ import { PairJobs, VisualJobs } from './visual.js';
  * @property {string} [staticDir] Built dashboard to serve on /, if present.
  * @property {Workspace} [workspace] Dashboard-made pipelines and parameters.
  * @property {AiService} [ai] Commit reviews through dops-ai; injectable for tests.
+ * @property {import('@dops/ui-tests').runSuite} [runSuite] Injectable for tests.
  */
 
 /**
@@ -42,7 +44,7 @@ const COOKIE = 'dops_token';
 function requestToken(request) {
   const header = request.headers.authorization ?? '';
   if (header.startsWith('Bearer ')) return header.slice('Bearer '.length);
-  // Set by POST /api/session so that plain links and <img> tags are authenticated too.
+  // Set by POST /api/session so that plain links, <img> tags and HTML reports are authenticated too.
   const cookie = (request.headers.cookie ?? '')
     .split(';')
     .map((part) => part.trim())
@@ -63,6 +65,7 @@ export function buildServer({
   staticDir,
   workspace = new Workspace(config.dashboard.workspaceFile, config),
   ai = new AiService(config),
+  runSuite,
 }) {
   if (!token || token.length < 16) {
     throw new Error('A token of at least 16 characters is required');
@@ -76,12 +79,13 @@ export function buildServer({
   });
   const runs = new RunManager({ config, history, connect });
   app.decorate('runs', runs);
+  const tests = new TestRunManager({ uiTests: config.uiTests, ...(runSuite ? { runSuite } : {}) });
 
   app.addHook('onRequest', async (request, reply) => {
     // WebSocket upgrades authenticate in their handler: a rejected upgrade socket
     // is not tracked by the HTTP server and would block shutdown.
     if (request.headers.upgrade === 'websocket') return;
-    const protectedPath = request.url.startsWith('/api/') || request.url.startsWith('/files/');
+    const protectedPath = /^\/(api|files|reports)\//.test(request.url);
     if (protectedPath && !sameToken(requestToken(request), token)) {
       return reply.code(401).send({ error: 'Unauthorized' });
     }
@@ -612,11 +616,62 @@ export function buildServer({
     index: false,
   });
 
+  app.get('/api/tests/suites', async () =>
+    Object.entries(config.uiTests.suites).map(([name, suite]) => ({
+      name,
+      baseUrl: suite.baseUrl,
+      schedules: config.uiTests.schedules.filter((s) => s.suite === name).map((s) => s.cron),
+      running: tests.active.has(name),
+    })),
+  );
+
+  app.get('/api/tests/runs', async (request) => {
+    const query = /** @type {{ suite?: string, limit?: string }} */ (request.query);
+    const finished = await tests.history.list({
+      limit: Number(query.limit ?? 50),
+      ...(query.suite ? { suite: query.suite } : {}),
+    });
+    const active = [...tests.active.values()]
+      .filter((run) => !query.suite || run.suite === query.suite)
+      .map((run) => ({ ...run, id: `running-${run.suite}`, status: 'running', failures: [] }));
+    return [...active, ...finished.map((run) => ({ ...run, reportUrl: tests.reportUrl(run) }))];
+  });
+
+  app.post(
+    '/api/tests/runs',
+    {
+      schema: {
+        body: {
+          type: 'object',
+          required: ['suite'],
+          additionalProperties: false,
+          properties: { suite: { type: 'string' } },
+        },
+      },
+    },
+    async (request, reply) => {
+      const { suite } = /** @type {{ suite: string }} */ (request.body);
+      return reply.code(202).send(tests.start(suite));
+    },
+  );
+
+  app.get('/api/visual/reports', async () => listVisualReports(config.visual.outputDir));
+
+  // Playwright and visual HTML reports, behind the same token (cookie).
+  for (const [prefix, dir] of [
+    ['/reports/ui-tests/', config.uiTests.outputDir],
+    ['/reports/visual/', config.visual.outputDir],
+  ]) {
+    const root = resolve(/** @type {string} */ (dir));
+    mkdirSync(root, { recursive: true });
+    app.register(fastifyStatic, { root, prefix, decorateReply: false, index: false });
+  }
+
   if (staticDir && existsSync(staticDir)) {
     app.register(fastifyStatic, { root: staticDir });
     // Client-side routes: serve index.html for anything that is not the API.
     app.setNotFoundHandler((request, reply) =>
-      request.method === 'GET' && !/^\/(api|files)\//.test(request.url)
+      request.method === 'GET' && !/^\/(api|files|reports)\//.test(request.url)
         ? reply.sendFile('index.html')
         : reply.code(404).send({ error: 'Not found' }),
     );

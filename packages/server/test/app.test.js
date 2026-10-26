@@ -18,6 +18,12 @@ visual:
 params:
   branch: { description: Branch, default: main }
   module: { description: Module to enable }
+uiTests:
+  outputDir: ${join(outputRoot, 'ui-tests')}
+  suites:
+    smoke: { testDir: tests/smoke, baseUrl: 'https://shop.ddev.site' }
+  schedules:
+    - { suite: smoke, cron: '0 7 * * 1-5' }
 sites:
   fr: { alias: '@fr' }
 targets:
@@ -41,6 +47,19 @@ async function setup({ delayMs = 0, exitCode = 0 } = {}) {
     config,
     history,
     token: TOKEN,
+    runSuite: async (suite, _options, { outputDir }) => {
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+      return {
+        id: `run-${Date.now()}`,
+        suite,
+        status: 'passed',
+        startedAt: new Date().toISOString(),
+        finishedAt: new Date().toISOString(),
+        stats: { passed: 3, failed: 0, flaky: 0, skipped: 0, durationMs: 900 },
+        failures: [],
+        reportDir: join(outputDir, suite, 'run-1', 'report'),
+      };
+    },
     connect: async (name) => ({
       exec: async (command, options) => {
         commands.push(`${name}: ${command}`);
@@ -340,5 +359,51 @@ describe('dashboard API', () => {
     );
     const state = (await app.inject({ url: '/api/visual/pairs', headers: auth })).json();
     expect(state).toEqual({ job: null, result: null });
+  });
+
+  it('sets a session cookie that also unlocks the reports', async () => {
+    const { app } = await setup();
+    await mkdir(join(outputRoot, 'visual', 'shop'), { recursive: true });
+    await writeFile(join(outputRoot, 'visual', 'shop', 'report-prod-stage.html'), '<h1>diff</h1>');
+
+    expect(
+      (await app.inject({ url: '/reports/visual/shop/report-prod-stage.html' })).statusCode,
+    ).toBe(401);
+    const session = await app.inject({ method: 'POST', url: '/api/session', headers: auth });
+    const cookie = String(session.headers['set-cookie']);
+    expect(cookie).toContain('HttpOnly');
+    const report = await app.inject({
+      url: '/reports/visual/shop/report-prod-stage.html',
+      headers: { cookie: cookie.split(';')[0] },
+    });
+    expect(report.body).toBe('<h1>diff</h1>');
+
+    const reports = (await app.inject({ url: '/api/visual/reports', headers: auth })).json();
+    expect(reports[0]).toMatchObject({ set: 'shop', name: 'prod → stage' });
+  });
+
+  it('runs a UI test suite in the background and lists it with its report', async () => {
+    const { app } = await setup({ delayMs: 50 });
+    const suites = (await app.inject({ url: '/api/tests/suites', headers: auth })).json();
+    expect(suites).toEqual([
+      {
+        name: 'smoke',
+        baseUrl: 'https://shop.ddev.site',
+        schedules: ['0 7 * * 1-5'],
+        running: false,
+      },
+    ]);
+
+    const post = (suite) =>
+      app.inject({ method: 'POST', url: '/api/tests/runs', headers: auth, payload: { suite } });
+    expect((await post('smoke')).statusCode).toBe(202);
+    expect((await post('smoke')).statusCode).toBe(409);
+    expect((await post('nope')).statusCode).toBe(404);
+
+    const runs = await waitFor(async () => {
+      const list = (await app.inject({ url: '/api/tests/runs', headers: auth })).json();
+      return list[0]?.status === 'passed' ? list : undefined;
+    });
+    expect(runs[0].reportUrl).toBe('/reports/ui-tests/smoke/run-1/report/index.html');
   });
 });
