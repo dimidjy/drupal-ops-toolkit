@@ -148,6 +148,35 @@
  * @property {string} [diffImage]
  */
 
+/**
+ * @typedef {object} TestSuiteInfo
+ * @property {string} name
+ * @property {string} baseUrl
+ * @property {string[]} schedules
+ * @property {boolean} running
+ */
+
+/**
+ * @typedef {object} TestRunInfo
+ * @property {string} id
+ * @property {string} suite
+ * @property {'running' | 'passed' | 'failed' | 'error'} status
+ * @property {string} startedAt
+ * @property {string} [finishedAt]
+ * @property {{ passed: number, failed: number, flaky: number, skipped: number, durationMs: number }} [stats]
+ * @property {{ title: string, file: string, line: number, error: string }[]} failures
+ * @property {string | null} [reportUrl]
+ * @property {string} [error]
+ */
+
+/**
+ * @typedef {object} VisualReportInfo
+ * @property {string} set
+ * @property {string} name
+ * @property {string} url
+ * @property {string} modifiedAt
+ */
+
 export class ApiError extends Error {
   /**
    * @param {number} status
@@ -313,6 +342,15 @@ export function createApi(token, base = '') {
      */
     boardReport: (id) => request(`/api/jira/board/reports/${encodeURIComponent(id)}`),
     clearBoardReports: () => request('/api/jira/board/reports', { method: 'DELETE' }),
+    /** @returns {Promise<TestSuiteInfo[]>} */
+    testSuites: () => request('/api/tests/suites'),
+    /** @returns {Promise<TestRunInfo[]>} */
+    testRuns: () => request('/api/tests/runs'),
+    /** @param {string} suite */
+    startTests: (suite) =>
+      request('/api/tests/runs', { method: 'POST', body: JSON.stringify({ suite }) }),
+    /** @returns {Promise<VisualReportInfo[]>} */
+    visualReports: () => request('/api/visual/reports'),
     /**
      * Subscribes to a run's events; returns a function that closes the socket.
      *

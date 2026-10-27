@@ -34,23 +34,94 @@ body {
   margin: 0;
 }
 
-header {
-  display: flex;
-  gap: 1rem;
-  align-items: baseline;
-  padding: 0.75rem 1.5rem;
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
+.layout {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  min-height: 100vh;
 }
 
-header .link {
-  margin-left: auto;
+aside {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1.25rem 1rem;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+}
+
+aside .brand {
+  font-size: 1.25rem;
+  letter-spacing: 0.02em;
+}
+
+aside nav {
+  flex-direction: column;
+}
+
+aside nav button.tab {
+  text-align: left;
+}
+
+aside .nav-items {
+  display: flex;
+  flex-direction: column;
+}
+
+aside .nav-group {
+  margin: 0.75rem 0 0.15rem 0.9rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+aside .logout {
+  margin-top: auto;
+  text-align: left;
 }
 
 main {
+  width: 100%;
   max-width: 1100px;
-  margin: 0 auto;
+  box-sizing: border-box;
   padding: 1.5rem;
+}
+
+@media (max-width: 720px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+
+  aside {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+
+  aside nav {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  aside .nav-group {
+    display: none;
+  }
+
+  aside .nav-items {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  aside .logout {
+    margin: 0 0 0 auto;
+  }
+
+  main {
+    padding: 1rem;
+  }
 }
 
 .muted {
@@ -167,13 +238,19 @@ fieldset {
   vertical-align: middle;
 }
 
-.status.ok {
+.status.ok,
+.status.passed {
   color: var(--ok);
 }
 
 .status.failed,
-.status.cancelled {
+.status.cancelled,
+.status.error {
   color: var(--fail);
+}
+
+.status.running {
+  color: var(--accent);
 }
 
 .run-steps {
@@ -540,10 +617,6 @@ ul.plain {
   margin: 1rem 0 0.4rem;
 }
 
-header nav {
-  flex-wrap: wrap;
-}
-
 .board-table {
   table-layout: fixed;
 }
@@ -576,4 +649,26 @@ header nav {
   flex-direction: column;
   font-size: 0.9em;
   word-break: break-all;
+}
+
+table.history tbody tr.static {
+  cursor: default;
+}
+
+table.history tbody tr.static:hover {
+  background: none;
+}
+
+.failure {
+  font-size: 0.85em;
+  margin-top: 0.2rem;
+}
+
+a {
+  color: var(--accent);
+}
+
+.cards .card button {
+  align-self: flex-start;
+  margin-top: 0.5rem;
 }

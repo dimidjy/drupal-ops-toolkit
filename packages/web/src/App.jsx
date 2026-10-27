@@ -8,74 +8,98 @@ import { PipelineEditor } from './components/PipelineEditor.jsx';
 import { Pipelines } from './components/Pipelines.jsx';
 import { Review } from './components/Review.jsx';
 import { RunView } from './components/RunView.jsx';
+import { Tests } from './components/Tests.jsx';
 import { TokenGate } from './components/TokenGate.jsx';
+import { Visual } from './components/Visual.jsx';
 import { VisualTesting } from './components/VisualTesting.jsx';
 
-const TABS = /** @type {const} */ ([
-  'Pipelines',
-  'Local',
-  'Editor',
-  'Parameters',
-  'Visual',
-  'Compare',
-  'Review',
-  'Jira',
-  'Board',
-  'History',
+const GROUPS = /** @type {const} */ ([
+  [
+    'Deploy',
+    [
+      ['deploy', 'Pipelines'],
+      ['local', 'Local'],
+      ['editor', 'Editor'],
+      ['params', 'Parameters'],
+      ['runs', 'Runs'],
+    ],
+  ],
+  [
+    'QA',
+    [
+      ['tests', 'UI tests'],
+      ['visual', 'Visual testing'],
+      ['compare', 'Page compare'],
+      ['reports', 'Reports'],
+    ],
+  ],
+  [
+    'AI & Jira',
+    [
+      ['review', 'Review'],
+      ['jira', 'Jira'],
+      ['board', 'Board'],
+    ],
+  ],
 ]);
+
+/** @typedef {(typeof GROUPS)[number][1][number][0]} Section */
 
 /**
  * @param {{ api: import('./api.js').Api, logout: () => void }} props
  */
 function Dashboard({ api, logout }) {
-  const [tab, setTab] = useState(/** @type {(typeof TABS)[number]} */ ('Pipelines'));
+  const [section, setSection] = useState(/** @type {Section} */ ('deploy'));
   const [runId, setRunId] = useState('');
+
+  /** @type {Record<Section, () => import('react').ReactNode>} */
+  const views = {
+    deploy: () => <Pipelines api={api} onStarted={setRunId} />,
+    local: () => <Pipelines key="local" api={api} onStarted={setRunId} scope="local" />,
+    editor: () => <PipelineEditor api={api} />,
+    params: () => <Params api={api} />,
+    runs: () => <History api={api} onOpen={setRunId} />,
+    tests: () => <Tests api={api} />,
+    visual: () => <VisualTesting api={api} />,
+    compare: () => <PageCompare api={api} />,
+    reports: () => <Visual api={api} />,
+    review: () => <Review api={api} />,
+    jira: () => <Jira api={api} />,
+    board: () => <Board api={api} />,
+  };
 
   return (
     <div className="layout">
-      <header>
-        <strong>dops</strong>
+      <aside>
+        <strong className="brand">dops</strong>
         <nav>
-          {TABS.map((name) => (
-            <button
-              key={name}
-              className={`tab ${tab === name && !runId ? 'active' : ''}`}
-              onClick={() => {
-                setTab(name);
-                setRunId('');
-              }}
-            >
-              {name}
-            </button>
+          {GROUPS.map(([group, items]) => (
+            <div key={group} className="nav-items">
+              <span className="nav-group">{group}</span>
+              {items.map(([key, label]) => (
+                <button
+                  key={key}
+                  className={`tab ${section === key && !runId ? 'active' : ''}`}
+                  onClick={() => {
+                    setSection(key);
+                    setRunId('');
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
           ))}
         </nav>
-        <button className="link" onClick={logout}>
+        <button className="link logout" onClick={logout}>
           Log out
         </button>
-      </header>
+      </aside>
       <main>
         {runId ? (
           <RunView api={api} runId={runId} onClose={() => setRunId('')} />
-        ) : tab === 'Pipelines' ? (
-          <Pipelines api={api} onStarted={setRunId} />
-        ) : tab === 'Local' ? (
-          <Pipelines key="local" api={api} onStarted={setRunId} scope="local" />
-        ) : tab === 'Editor' ? (
-          <PipelineEditor api={api} />
-        ) : tab === 'Parameters' ? (
-          <Params api={api} />
-        ) : tab === 'Visual' ? (
-          <VisualTesting api={api} />
-        ) : tab === 'Compare' ? (
-          <PageCompare api={api} />
-        ) : tab === 'Review' ? (
-          <Review api={api} />
-        ) : tab === 'Jira' ? (
-          <Jira api={api} />
-        ) : tab === 'Board' ? (
-          <Board api={api} />
         ) : (
-          <History api={api} onOpen={setRunId} />
+          views[section]()
         )}
       </main>
     </div>
