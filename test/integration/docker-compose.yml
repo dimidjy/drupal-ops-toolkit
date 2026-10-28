@@ -1,0 +1,30 @@
+# Bastion on 127.0.0.1:2222; the target is only reachable through it.
+# AUTHORIZED_KEY must hold the public key the tests log in with
+# (see test/integration/run.sh).
+services:
+  bastion:
+    build: ./ssh
+    environment:
+      AUTHORIZED_KEY: ${AUTHORIZED_KEY:-}
+    ports:
+      - '127.0.0.1:2222:22'
+    networks: [edge, internal]
+    healthcheck:
+      test: ['CMD', 'sh', '-c', 'nc -z 127.0.0.1 22']
+      interval: 1s
+      retries: 30
+
+  target:
+    build: ./ssh
+    environment:
+      AUTHORIZED_KEY: ${AUTHORIZED_KEY:-}
+    networks: [internal]
+    healthcheck:
+      test: ['CMD', 'sh', '-c', 'nc -z 127.0.0.1 22']
+      interval: 1s
+      retries: 30
+
+networks:
+  edge: {}
+  internal:
+    internal: true
