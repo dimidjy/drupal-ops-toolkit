@@ -42,6 +42,9 @@ export async function startServer({
     staticDir: DASHBOARD_DIR,
   });
   const address = await app.listen({ host, port });
+  await /** @type {import('./tests.js').TestSchedules} */ (
+    /** @type {any} */ (app).schedules
+  ).start();
   if (!env.DOPS_TOKEN) {
     app.log.info(`No DOPS_TOKEN set, generated one for this session: ${token}`);
   }

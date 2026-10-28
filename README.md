@@ -129,6 +129,15 @@ npx dops test show <run-id>
 npx dops test schedule              # run suites on uiTests.schedules (cron)
 ```
 
+From the dashboard's UI tests section you can run a whole suite or one spec
+file, against the default URL or one of the suite's `environments`, in
+Chromium, Firefox, WebKit or an emulated phone, and hand the specs a list of
+URLs (they read `DOPS_TEST_URLS`; see `examples/ui-tests/smoke/pages.spec.js`).
+Running tests can be stopped. Schedules ("weekdays at 07:00", "every 30
+minutes" or any cron) are created there too and run inside `dops serve`, next
+to the ones from the config file. The CLI takes the same options:
+`dops test run smoke --file pages.spec.js --env prod --browser mobile --url / --url /cart`.
+
 `examples/ui-tests/smoke` checks the demo site: home page without PHP or JS
 errors, login form, JSON:API. With `uiTests.notify` failing runs (and
 recoveries) are posted to a Slack-compatible webhook.

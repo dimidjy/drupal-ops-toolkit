@@ -4,15 +4,17 @@ import { resolve } from 'node:path';
 import fastifyStatic from '@fastify/static';
 import websocket from '@fastify/websocket';
 import Fastify from 'fastify';
-import { Workspace, isLocalTarget, pipelineParams } from '@dops/core';
+import { BROWSERS, Workspace, isLocalTarget, pipelineParams } from '@dops/core';
+import { listTestFiles } from '@dops/ui-tests';
 import { MissingParamsError, RunConflictError, RunManager } from './runs.js';
 import { AiService } from './ai.js';
-import { TestRunManager, listVisualReports } from './tests.js';
+import { TestRunManager, TestSchedules, listVisualReports } from './tests.js';
 import { PairJobs, VisualJobs } from './visual.js';
 
 /**
  * @import { Config, Target, CommandExecutor, RunHistory } from '@dops/core'
  * @import { FastifyRequest } from 'fastify'
+ * @import { UiRunOptions } from '@dops/core'
  */
 
 /**
@@ -55,6 +57,15 @@ function requestToken(request) {
   return query.token ?? '';
 }
 
+/**
+ * An active test run without its controller and promise.
+ *
+ * @param {{ suite: string, startedAt: string, testFile?: string, environment?: string, browser?: string }} entry
+ */
+function publicRun({ suite, startedAt, testFile, environment, browser }) {
+  return { suite, startedAt, testFile, environment, browser };
+}
+
 /** @param {ServerOptions} options */
 export function buildServer({
   config,
@@ -80,6 +91,10 @@ export function buildServer({
   const runs = new RunManager({ config, history, connect });
   app.decorate('runs', runs);
   const tests = new TestRunManager({ uiTests: config.uiTests, ...(runSuite ? { runSuite } : {}) });
+  const schedules = new TestSchedules(config.uiTests, tests);
+  // start.js turns the timers on; tests and embedders get a quiet server.
+  app.decorate('schedules', schedules);
+  app.addHook('onClose', () => schedules.stop());
 
   app.addHook('onRequest', async (request, reply) => {
     // WebSocket upgrades authenticate in their handler: a rejected upgrade socket
@@ -617,12 +632,16 @@ export function buildServer({
   });
 
   app.get('/api/tests/suites', async () =>
-    Object.entries(config.uiTests.suites).map(([name, suite]) => ({
-      name,
-      baseUrl: suite.baseUrl,
-      schedules: config.uiTests.schedules.filter((s) => s.suite === name).map((s) => s.cron),
-      running: tests.active.has(name),
-    })),
+    Promise.all(
+      Object.entries(config.uiTests.suites).map(async ([name, suite]) => ({
+        name,
+        baseUrl: suite.baseUrl,
+        environments: suite.environments,
+        files: await listTestFiles(suite),
+        schedules: config.uiTests.schedules.filter((s) => s.suite === name).map((s) => s.cron),
+        running: tests.active.has(name),
+      })),
+    ),
   );
 
   app.get('/api/tests/runs', async (request) => {
@@ -633,7 +652,12 @@ export function buildServer({
     });
     const active = [...tests.active.values()]
       .filter((run) => !query.suite || run.suite === query.suite)
-      .map((run) => ({ ...run, id: `running-${run.suite}`, status: 'running', failures: [] }));
+      .map((entry) => ({
+        ...publicRun(entry),
+        id: `running-${entry.suite}`,
+        status: 'running',
+        failures: [],
+      }));
     return [...active, ...finished.map((run) => ({ ...run, reportUrl: tests.reportUrl(run) }))];
   });
 
@@ -645,15 +669,95 @@ export function buildServer({
           type: 'object',
           required: ['suite'],
           additionalProperties: false,
-          properties: { suite: { type: 'string' } },
+          properties: {
+            suite: { type: 'string' },
+            testFile: { type: 'string' },
+            environment: { type: 'string' },
+            urls: { type: 'array', items: { type: 'string' }, maxItems: 200 },
+            browser: { enum: [...BROWSERS] },
+          },
         },
       },
     },
     async (request, reply) => {
-      const { suite } = /** @type {{ suite: string }} */ (request.body);
-      return reply.code(202).send(tests.start(suite));
+      const { suite, ...options } = /** @type {{ suite: string } & UiRunOptions} */ (request.body);
+      const entry = tests.start(suite, { ...options, trigger: 'dashboard' });
+      return reply.code(202).send(publicRun(entry));
     },
   );
+
+  app.post('/api/tests/runs/:suite/stop', async (request, reply) => {
+    const { suite } = /** @type {{ suite: string }} */ (request.params);
+    return tests.stop(suite)
+      ? reply.code(202).send({ suite })
+      : reply.code(404).send({ error: 'This suite is not running' });
+  });
+
+  app.get('/api/tests/schedules', async () => schedules.list());
+
+  app.post(
+    '/api/tests/schedules',
+    {
+      schema: {
+        body: {
+          type: 'object',
+          required: ['suite', 'cron'],
+          additionalProperties: false,
+          properties: {
+            name: { type: 'string', maxLength: 100 },
+            suite: { type: 'string' },
+            cron: { type: 'string' },
+            timezone: { type: 'string' },
+            testFile: { type: 'string' },
+            environment: { type: 'string' },
+            urls: { type: 'array', items: { type: 'string' }, maxItems: 200 },
+            browser: { enum: [...BROWSERS] },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const schedule = await schedules.store.add(
+        config.uiTests,
+        /** @type {import('@dops/core').UiSchedule} */ (request.body),
+      );
+      await schedules.reload();
+      return reply.code(201).send(schedule);
+    },
+  );
+
+  app.patch(
+    '/api/tests/schedules/:id',
+    {
+      schema: {
+        body: {
+          type: 'object',
+          required: ['enabled'],
+          additionalProperties: false,
+          properties: { enabled: { type: 'boolean' } },
+        },
+      },
+    },
+    async (request, reply) => {
+      const { id } = /** @type {{ id: string }} */ (request.params);
+      const updated = await schedules.store.update(
+        id,
+        /** @type {{ enabled: boolean }} */ (request.body),
+      );
+      if (!updated) return reply.code(404).send({ error: 'Not a dashboard schedule' });
+      await schedules.reload();
+      return updated;
+    },
+  );
+
+  app.delete('/api/tests/schedules/:id', async (request, reply) => {
+    const { id } = /** @type {{ id: string }} */ (request.params);
+    if (!(await schedules.store.remove(id))) {
+      return reply.code(404).send({ error: 'Not a dashboard schedule' });
+    }
+    await schedules.reload();
+    return reply.code(204).send();
+  });
 
   app.get('/api/visual/reports', async () => listVisualReports(config.visual.outputDir));
 

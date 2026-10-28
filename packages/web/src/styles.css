@@ -462,7 +462,7 @@ td.actions {
   white-space: nowrap;
 }
 
-td.actions button + button {
+td.actions > * + * {
   margin-left: 0.75rem;
 }
 

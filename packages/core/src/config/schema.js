@@ -90,13 +90,27 @@ const uiSuite = z.object({
   workers: z.number().int().positive().default(2),
   timeoutSeconds: z.number().int().positive().default(30),
   httpAuth: httpAuth.optional(),
+  /** Other deployments the suite can run against, e.g. { prod: "https://www.example.com" }. */
+  environments: z.record(name, z.string().url()).default({}),
 });
 
-const uiSchedule = z.object({
+export const BROWSERS = /** @type {const} */ (['chromium', 'firefox', 'webkit', 'mobile']);
+
+/** What to run of a suite: one spec file, an environment, URLs, a browser. */
+export const uiRunOptions = z.object({
+  testFile: z.string().optional(),
+  environment: name.optional(),
+  /** Passed to the specs as DOPS_TEST_URLS (comma separated). */
+  urls: z.array(z.string()).optional(),
+  browser: z.enum(BROWSERS).optional(),
+});
+
+const uiSchedule = uiRunOptions.extend({
   suite: name,
   /** Cron expression, e.g. "0 7 * * 1-5" for weekdays at 07:00. */
   cron: z.string().min(1),
   timezone: z.string().optional(),
+  name: z.string().optional(),
 });
 
 const uiTests = z.object({
@@ -254,5 +268,6 @@ export function paramDefaults(config) {
 /** @typedef {z.infer<typeof uiTests>} UiTestsConfig */
 /** @typedef {z.infer<typeof uiSuite>} UiSuite */
 /** @typedef {z.infer<typeof uiSchedule>} UiSchedule */
+/** @typedef {z.infer<typeof uiRunOptions>} UiRunOptions */
 /** @typedef {z.infer<typeof uiTests>['notify']} UiNotify */
 /** @typedef {z.infer<typeof urlSet>} UrlSet */

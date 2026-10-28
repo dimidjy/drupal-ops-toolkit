@@ -17,7 +17,7 @@ import cron from 'node-cron';
  *
  * @param {UiSchedule[]} schedules
  * @param {object} handlers
- * @param {(suite: string) => Promise<unknown>} handlers.run
+ * @param {(schedule: UiSchedule) => Promise<unknown>} handlers.run
  * @param {(suite: string) => void} [handlers.onSkip]
  * @param {(suite: string, error: unknown) => void} [handlers.onError]
  * @returns {{ scheduled: ScheduledSuite[], stop: () => Promise<void> }}
@@ -38,7 +38,7 @@ export function startScheduler(schedules, { run, onSkip, onError }) {
         }
         running.add(schedule.suite);
         try {
-          await run(schedule.suite);
+          await run(schedule);
         } catch (error) {
           onError?.(schedule.suite, error);
         } finally {
@@ -59,4 +59,9 @@ export function startScheduler(schedules, { run, onSkip, onError }) {
       await Promise.all(scheduled.map(({ task }) => task.destroy()));
     },
   };
+}
+
+/** @param {string} expression */
+export function isValidCron(expression) {
+  return cron.validate(expression);
 }

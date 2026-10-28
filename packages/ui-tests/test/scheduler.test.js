@@ -19,8 +19,8 @@ describe('startScheduler', () => {
     /** @type {string[]} */
     const runs = [];
     const scheduler = startScheduler([{ suite: 'smoke', cron: '0 7 * * 1-5' }], {
-      run: async (suite) => {
-        runs.push(suite);
+      run: async (schedule) => {
+        runs.push(schedule.suite);
       },
     });
     stop = scheduler.stop;

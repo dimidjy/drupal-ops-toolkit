@@ -152,21 +152,40 @@
  * @typedef {object} TestSuiteInfo
  * @property {string} name
  * @property {string} baseUrl
+ * @property {Record<string, string>} environments
+ * @property {string[]} files Spec files, relative to the suite's folder.
  * @property {string[]} schedules
  * @property {boolean} running
+ */
+
+/**
+ * @typedef {object} TestRunRequest
+ * @property {string} [testFile]
+ * @property {string} [environment]
+ * @property {string[]} [urls]
+ * @property {'chromium' | 'firefox' | 'webkit' | 'mobile'} [browser]
+ */
+
+/**
+ * @typedef {TestRunRequest & { id: string, name?: string, suite: string, cron: string,
+ *   enabled: boolean, source: 'config' | 'dashboard', nextRun: string | null }} ScheduleInfo
  */
 
 /**
  * @typedef {object} TestRunInfo
  * @property {string} id
  * @property {string} suite
- * @property {'running' | 'passed' | 'failed' | 'error'} status
+ * @property {'running' | 'passed' | 'failed' | 'error' | 'cancelled'} status
  * @property {string} startedAt
  * @property {string} [finishedAt]
  * @property {{ passed: number, failed: number, flaky: number, skipped: number, durationMs: number }} [stats]
  * @property {{ title: string, file: string, line: number, error: string }[]} failures
  * @property {string | null} [reportUrl]
  * @property {string} [error]
+ * @property {string} [testFile]
+ * @property {string} [environment]
+ * @property {string} [browser]
+ * @property {string} [trigger]
  */
 
 /**
@@ -346,9 +365,32 @@ export function createApi(token, base = '') {
     testSuites: () => request('/api/tests/suites'),
     /** @returns {Promise<TestRunInfo[]>} */
     testRuns: () => request('/api/tests/runs'),
+    /**
+     * @param {string} suite
+     * @param {TestRunRequest} [options]
+     */
+    startTests: (suite, options = {}) =>
+      request('/api/tests/runs', { method: 'POST', body: JSON.stringify({ suite, ...options }) }),
     /** @param {string} suite */
-    startTests: (suite) =>
-      request('/api/tests/runs', { method: 'POST', body: JSON.stringify({ suite }) }),
+    stopTests: (suite) =>
+      request(`/api/tests/runs/${encodeURIComponent(suite)}/stop`, { method: 'POST' }),
+    /** @returns {Promise<ScheduleInfo[]>} */
+    schedules: () => request('/api/tests/schedules'),
+    /** @param {TestRunRequest & { name?: string, suite: string, cron: string }} body */
+    addSchedule: (body) =>
+      request('/api/tests/schedules', { method: 'POST', body: JSON.stringify(body) }),
+    /**
+     * @param {string} id
+     * @param {boolean} enabled
+     */
+    toggleSchedule: (id, enabled) =>
+      request(`/api/tests/schedules/${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ enabled }),
+      }),
+    /** @param {string} id */
+    deleteSchedule: (id) =>
+      request(`/api/tests/schedules/${encodeURIComponent(id)}`, { method: 'DELETE' }),
     /** @returns {Promise<VisualReportInfo[]>} */
     visualReports: () => request('/api/visual/reports'),
     /**

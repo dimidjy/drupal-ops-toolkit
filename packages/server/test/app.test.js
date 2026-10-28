@@ -21,7 +21,10 @@ params:
 uiTests:
   outputDir: ${join(outputRoot, 'ui-tests')}
   suites:
-    smoke: { testDir: tests/smoke, baseUrl: 'https://shop.ddev.site' }
+    smoke:
+      testDir: tests/smoke
+      baseUrl: 'https://shop.ddev.site'
+      environments: { prod: 'https://www.example.com' }
   schedules:
     - { suite: smoke, cron: '0 7 * * 1-5' }
 sites:
@@ -47,8 +50,19 @@ async function setup({ delayMs = 0, exitCode = 0 } = {}) {
     config,
     history,
     token: TOKEN,
-    runSuite: async (suite, _options, { outputDir }) => {
+    runSuite: async (suite, _options, { outputDir, signal, environment, browser }) => {
       await new Promise((resolve) => setTimeout(resolve, delayMs));
+      if (signal?.aborted) {
+        return {
+          id: `run-${Date.now()}`,
+          suite,
+          status: 'cancelled',
+          startedAt: new Date().toISOString(),
+          finishedAt: new Date().toISOString(),
+          failures: [],
+          reportDir: join(outputDir, suite, 'run-1', 'report'),
+        };
+      }
       return {
         id: `run-${Date.now()}`,
         suite,
@@ -58,6 +72,8 @@ async function setup({ delayMs = 0, exitCode = 0 } = {}) {
         stats: { passed: 3, failed: 0, flaky: 0, skipped: 0, durationMs: 900 },
         failures: [],
         reportDir: join(outputDir, suite, 'run-1', 'report'),
+        environment,
+        browser,
       };
     },
     connect: async (name) => ({
@@ -389,6 +405,8 @@ describe('dashboard API', () => {
       {
         name: 'smoke',
         baseUrl: 'https://shop.ddev.site',
+        environments: { prod: 'https://www.example.com' },
+        files: [],
         schedules: ['0 7 * * 1-5'],
         running: false,
       },
@@ -405,5 +423,70 @@ describe('dashboard API', () => {
       return list[0]?.status === 'passed' ? list : undefined;
     });
     expect(runs[0].reportUrl).toBe('/reports/ui-tests/smoke/run-1/report/index.html');
+  });
+
+  it('runs a suite with options and stops it', async () => {
+    const { app } = await setup({ delayMs: 100 });
+    const post = (payload) =>
+      app.inject({ method: 'POST', url: '/api/tests/runs', headers: auth, payload });
+    expect((await post({ suite: 'smoke', environment: 'qa' })).statusCode).toBe(400);
+    expect((await post({ suite: 'smoke', browser: 'opera' })).statusCode).toBe(400);
+    const started = await post({ suite: 'smoke', environment: 'prod', browser: 'mobile' });
+    expect(started.json()).toMatchObject({
+      suite: 'smoke',
+      environment: 'prod',
+      browser: 'mobile',
+    });
+    const stop = await app.inject({
+      method: 'POST',
+      url: '/api/tests/runs/smoke/stop',
+      headers: auth,
+    });
+    expect(stop.statusCode).toBe(202);
+    const runs = await waitFor(async () => {
+      const list = (await app.inject({ url: '/api/tests/runs', headers: auth })).json();
+      return list[0]?.status === 'cancelled' ? list : undefined;
+    });
+    expect(runs[0].status).toBe('cancelled');
+  });
+
+  it('manages dashboard schedules next to the config ones', async () => {
+    const { app } = await setup();
+    const create = (payload) =>
+      app.inject({ method: 'POST', url: '/api/tests/schedules', headers: auth, payload });
+    expect((await create({ suite: 'smoke', cron: 'often' })).statusCode).toBe(400);
+    const created = await create({
+      name: 'Nightly',
+      suite: 'smoke',
+      cron: '0 3 * * *',
+      browser: 'firefox',
+    });
+    expect(created.statusCode).toBe(201);
+    const { id } = created.json();
+
+    const list = (await app.inject({ url: '/api/tests/schedules', headers: auth })).json();
+    expect(list.map((s) => [s.source, s.cron])).toEqual([
+      ['config', '0 7 * * 1-5'],
+      ['dashboard', '0 3 * * *'],
+    ]);
+    const toggle = await app.inject({
+      method: 'PATCH',
+      url: `/api/tests/schedules/${id}`,
+      headers: auth,
+      payload: { enabled: false },
+    });
+    expect(toggle.json().enabled).toBe(false);
+    const removed = await app.inject({
+      method: 'DELETE',
+      url: `/api/tests/schedules/${id}`,
+      headers: auth,
+    });
+    expect(removed.statusCode).toBe(204);
+    const configOne = await app.inject({
+      method: 'DELETE',
+      url: '/api/tests/schedules/config-0',
+      headers: auth,
+    });
+    expect(configOne.statusCode).toBe(404);
   });
 });

@@ -6,6 +6,7 @@ import {
   DEFAULT_CONFIG_FILE,
   PipelineRunner,
   RunHistory,
+  BROWSERS,
   Workspace,
   describeTarget,
   dumpFileName,
@@ -19,7 +20,15 @@ import {
   sshConnector,
 } from '@dops/core';
 import { startServer } from '@dops/server';
-import { TestHistory, notifyRun, runSuite, startScheduler } from '@dops/ui-tests';
+import {
+  ScheduleStore,
+  TestHistory,
+  notifyRun,
+  pickRunOptions,
+  runSuite,
+  scheduleFile,
+  startScheduler,
+} from '@dops/ui-tests';
 import { captureSet, compareDirs, forEnvironment, writeReport } from '@dops/visual';
 import { formatEvent, formatTestRun } from './output.js';
 
@@ -440,37 +449,69 @@ export function createProgram(overrides = {}) {
     .command('run')
     .description('run one or more suites and record the results')
     .argument('<suites...>', 'suite names')
+    .option('-f, --file <spec>', 'only this spec file of the suite')
+    .option('-e, --env <name>', 'run against one of the suite environments')
+    .option('-b, --browser <name>', 'chromium, firefox, webkit or mobile', 'chromium')
+    .option('-u, --url <url...>', 'URLs for the specs (DOPS_TEST_URLS)')
     .option('-q, --quiet', 'only print the summary')
-    .action(async (/** @type {string[]} */ names, /** @type {{ quiet?: boolean }} */ options) => {
-      const { uiTests } = await config();
-      for (const name of names) {
-        if (!uiTests.suites[name]) throw new Error(`Unknown suite "${name}"`);
-      }
-      let failed = false;
-      for (const name of names) {
-        const suite = /** @type {import('@dops/core').UiSuite} */ (uiTests.suites[name]);
-        ctx.write(`${pc.bold(`Running ${name}`)} ${pc.dim(`against ${suite.baseUrl}`)}\n`);
-        const run = await runSuite(name, suite, {
-          outputDir: uiTests.outputDir,
-          ...(options.quiet ? {} : { onOutput: (chunk) => ctx.write(pc.dim(chunk)) }),
-        });
-        await recordTestRun(uiTests, run);
-        failed ||= run.status !== 'passed';
-      }
-      if (failed) process.exitCode = 1;
-    });
+    .action(
+      async (
+        /** @type {string[]} */ names,
+        /** @type {{ file?: string, env?: string, browser: string, url?: string[], quiet?: boolean }} */ options,
+      ) => {
+        const { uiTests } = await config();
+        for (const name of names) {
+          if (!uiTests.suites[name]) throw new Error(`Unknown suite "${name}"`);
+        }
+        if (!BROWSERS.includes(/** @type {any} */ (options.browser))) {
+          throw new Error(`Unknown browser "${options.browser}" (${BROWSERS.join(', ')})`);
+        }
+        let failed = false;
+        for (const name of names) {
+          const suite = /** @type {import('@dops/core').UiSuite} */ (uiTests.suites[name]);
+          const baseUrl = options.env ? suite.environments[options.env] : suite.baseUrl;
+          ctx.write(
+            `${pc.bold(`Running ${name}`)} ${pc.dim(`against ${baseUrl ?? options.env}`)}\n`,
+          );
+          const run = await runSuite(name, suite, {
+            outputDir: uiTests.outputDir,
+            trigger: 'cli',
+            browser: /** @type {import('@dops/core').UiRunOptions['browser']} */ (options.browser),
+            ...(options.file ? { testFile: options.file } : {}),
+            ...(options.env ? { environment: options.env } : {}),
+            ...(options.url ? { urls: options.url } : {}),
+            ...(options.quiet ? {} : { onOutput: (chunk) => ctx.write(pc.dim(chunk)) }),
+          });
+          await recordTestRun(uiTests, run);
+          failed ||= run.status !== 'passed';
+        }
+        if (failed) process.exitCode = 1;
+      },
+    );
 
   tests
     .command('schedule')
-    .description('keep running and start suites on their uiTests.schedules')
+    .description('keep running and start suites on their schedules (config and dashboard)')
     .action(async () => {
       const { uiTests } = await config();
-      if (!uiTests.schedules.length) throw new Error('No uiTests.schedules configured');
-      const scheduler = startScheduler(uiTests.schedules, {
-        run: async (name) => {
-          const suite = /** @type {import('@dops/core').UiSuite} */ (uiTests.suites[name]);
-          ctx.write(`${pc.dim(new Date().toISOString())} ${pc.bold(`Running ${name}`)}\n`);
-          const run = await runSuite(name, suite, { outputDir: uiTests.outputDir });
+      const fromDashboard = (await new ScheduleStore(scheduleFile(uiTests)).list()).filter(
+        (schedule) => schedule.enabled,
+      );
+      const schedules = [...uiTests.schedules, ...fromDashboard];
+      if (!schedules.length) throw new Error('No uiTests.schedules configured');
+      const scheduler = startScheduler(schedules, {
+        run: async (schedule) => {
+          const suite = /** @type {import('@dops/core').UiSuite} */ (
+            uiTests.suites[schedule.suite]
+          );
+          ctx.write(
+            `${pc.dim(new Date().toISOString())} ${pc.bold(`Running ${schedule.suite}`)}\n`,
+          );
+          const run = await runSuite(schedule.suite, suite, {
+            outputDir: uiTests.outputDir,
+            trigger: `schedule:${schedule.name ?? schedule.cron}`,
+            ...pickRunOptions(schedule),
+          });
           await recordTestRun(uiTests, run);
         },
         onSkip: (name) => ctx.write(pc.yellow(`${name} is still running, skipping this trigger\n`)),
@@ -479,7 +520,8 @@ export function createProgram(overrides = {}) {
       });
       for (const { schedule, task } of scheduler.scheduled) {
         const next = task.getNextRun()?.toLocaleString() ?? 'never';
-        ctx.write(`${pc.bold(schedule.suite)}  ${schedule.cron}  ${pc.dim(`next: ${next}`)}\n`);
+        const label = schedule.name ? `${schedule.name} (${schedule.suite})` : schedule.suite;
+        ctx.write(`${pc.bold(label)}  ${schedule.cron}  ${pc.dim(`next: ${next}`)}\n`);
       }
       ctx.write(pc.dim('Waiting for schedules, Ctrl+C to stop.\n'));
       await new Promise((resolve) => process.once('SIGINT', resolve));

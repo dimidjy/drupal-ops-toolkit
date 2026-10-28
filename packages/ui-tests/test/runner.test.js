@@ -12,7 +12,14 @@ const testDir = join(import.meta.dirname, 'fixtures', 'suite');
 describe('playwrightConfig', () => {
   it('points Playwright at the suite and the run folder', () => {
     const source = playwrightConfig(
-      { testDir, baseUrl: 'https://shop.ddev.site', retries: 0, workers: 1, timeoutSeconds: 5 },
+      {
+        testDir,
+        baseUrl: 'https://shop.ddev.site',
+        retries: 0,
+        workers: 1,
+        timeoutSeconds: 5,
+        environments: {},
+      },
       '/runs/1',
       { username: 'qa', password: 'x' },
     );
@@ -40,7 +47,14 @@ describe.skipIf(!existsSync(chromium.executablePath()))('runSuite', () => {
 
   afterAll(() => new Promise((resolve) => server.close(() => resolve(undefined))));
 
-  const suite = () => ({ testDir, baseUrl, retries: 0, workers: 1, timeoutSeconds: 15 });
+  const suite = () => ({
+    testDir,
+    baseUrl,
+    retries: 0,
+    workers: 1,
+    timeoutSeconds: 15,
+    environments: {},
+  });
 
   it('reports a passing suite', async () => {
     const outputDir = await mkdtemp(join(tmpdir(), 'dops-ui-'));
@@ -49,6 +63,39 @@ describe.skipIf(!existsSync(chromium.executablePath()))('runSuite', () => {
     expect(run.stats).toMatchObject({ passed: 2, failed: 0 });
     expect(existsSync(join(run.reportDir, 'index.html'))).toBe(true);
   }, 120_000);
+
+  it('runs one file against an environment and passes the URL list', async () => {
+    const outputDir = await mkdtemp(join(tmpdir(), 'dops-ui-'));
+    const run = await runSuite(
+      'smoke',
+      { ...suite(), baseUrl: 'http://127.0.0.1:9', environments: { local: baseUrl } },
+      {
+        outputDir,
+        testFile: 'pages.spec.js',
+        environment: 'local',
+        urls: ['/a', '/b'],
+        browser: 'mobile',
+      },
+    );
+    expect(run).toMatchObject({
+      status: 'passed',
+      testFile: 'pages.spec.js',
+      environment: 'local',
+      baseUrl,
+      browser: 'mobile',
+    });
+    await expect(
+      runSuite('smoke', suite(), { outputDir, testFile: '../../etc/passwd' }),
+    ).resolves.toMatchObject({ status: 'error', error: expect.stringMatching(/No test file/) });
+  }, 120_000);
+
+  it('can be cancelled', async () => {
+    const outputDir = await mkdtemp(join(tmpdir(), 'dops-ui-'));
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), 300);
+    const run = await runSuite('smoke', suite(), { outputDir, signal: controller.signal });
+    expect(run.status).toBe('cancelled');
+  }, 60_000);
 
   it('lists failing tests with their first error line', async () => {
     aboutTitle = 'Our story';
@@ -59,4 +106,28 @@ describe.skipIf(!existsSync(chromium.executablePath()))('runSuite', () => {
     expect(run.failures[0]).toMatchObject({ title: 'pages › about mentions the shop' });
     expect(run.failures[0]?.error).toMatch(/toHaveText/);
   }, 120_000);
+});
+
+describe('run options', () => {
+  it('maps browsers to Playwright settings', async () => {
+    const { browserSettings } = await import('../src/runner.js');
+    expect(browserSettings('firefox')).toEqual({ browserName: 'firefox' });
+    expect(browserSettings('mobile')).toMatchObject({
+      isMobile: true,
+      defaultBrowserType: 'chromium',
+    });
+  });
+
+  it('lists the spec files of a suite', async () => {
+    const { listTestFiles } = await import('../src/runner.js');
+    const suite = {
+      testDir,
+      baseUrl: 'https://a.test',
+      retries: 0,
+      workers: 1,
+      timeoutSeconds: 5,
+      environments: {},
+    };
+    expect(await listTestFiles(suite)).toEqual(['pages.spec.js']);
+  });
 });
