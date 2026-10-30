@@ -1,14 +1,122 @@
 # drupal-ops-toolkit
 
-Personal automation for day-to-day Drupal work: deploy pipelines over SSH,
-visual checks, smoke tests and AI-assisted code review.
+[![CI](https://github.com/dimidjy/drupal-ops-toolkit/actions/workflows/ci.yml/badge.svg)](https://github.com/dimidjy/drupal-ops-toolkit/actions/workflows/ci.yml)
 
-## Usage
+The tools I built to automate the repetitive parts of my Drupal work. It is a
+Node.js monorepo with a small Python package for the AI parts:
+
+- **Deploy pipelines over SSH**: named lists of shell steps run on one or more
+  servers, through a bastion, with live output, per-site values for
+  multisites, parameters asked for at run time and a history of every run;
+  quick one-off commands and local (DDEV) routines work the same way
+- **Pipeline editor**: build and edit pipelines in the browser from Drupal
+  templates, next to the ones in the config file
+- **Database pulls**: a gzipped `drush sql-dump` streamed through the bastion
+  and imported into the local DDEV site
+- **Visual regression**: paste a list of URLs, screenshot them before and
+  after a release (basic auth, cookies, viewport, parallel tabs) and page
+  through what changed; compare two URL lists side by side, or staging next to
+  production from the config
+- **UI tests**: Playwright suites or single specs against any environment,
+  in Chromium, Firefox, WebKit or a phone emulation, on demand or on a
+  schedule, with history, reports and a webhook when something breaks
+- **AI and Jira**: LLM review of a diff or a commit, checked against the Jira
+  ticket, as a pre-push hook; an analysis of a ticket before starting it; a
+  sprint summary for stand-up
+- **Dashboard**: a localhost React UI over all of the above
+
+Everything is driven by one YAML config. Secrets never live in it.
+
+## A typical release
+
+```bash
+npx dops test run smoke                    # is staging healthy?
+npx dops visual capture shop --label before
+uv run dops-ai review --diff main...       # last look at the branch
+npx dops deploy deploy                     # pull, composer, updb, cim, cr on both web nodes
+npx dops visual capture shop --label after
+npx dops visual compare shop               # anything that moved?
+```
+
+## AI in my workflow
+
+I use AI in two places: while writing code, and as a step in this toolkit.
+
+- **Writing code**: I pair with an AI coding assistant for scaffolding, tests
+  and refactors, and I review every change myself. The tests, strict
+  `tsc --checkJs`, mypy and CI are what make that safe.
+- **Review before a merge request**: `dops-ai review --diff main...` sends the
+  branch diff to OpenAI or Claude. The answer has to match a JSON schema
+  (verdict, plus findings with file, line and severity), so it can gate a push
+  instead of being chat text. Lock files and minified assets are left out, and
+  large diffs are trimmed by whole files.
+- **Did I build what the ticket asked for?** `dops-ai commit` reads the Jira
+  key from the commit message, loads the ticket, and asks the model to list
+  requirements that are missing as findings.
+- **Before starting a ticket**: `dops-ai issue SHOP-42 --analyze` reads the
+  issue, its comments and linked issues and drafts acceptance criteria, risks,
+  open questions and the order of work.
+- **Stand-up and weekly notes**: `dops-ai board --summarize` groups the sprint
+  by status, highlights issues that have been idle for days, and lets the model
+  write a short summary with risks. `dops-ai report` turns my week into
+  markdown with links.
+
+All of it is also in the dashboard (Review, Jira and Board), which calls the
+same CLI. The model only ever sees the diff and the ticket text. It cannot run
+anything: deploys, database pulls and tests are plain code paths.
+
+## Architecture
+
+```mermaid
+flowchart LR
+  subgraph you[Your machine]
+    CLI[dops CLI]
+    WEB[React dashboard] -->|token, WebSocket| SRV[Fastify server]
+    CLI --> CORE
+    SRV --> CORE
+    CORE[core<br/>config · SSH · pipelines · history · db]
+    CLI --> VIS[visual<br/>Playwright · pixelmatch]
+    CLI --> UIT[ui-tests<br/>Playwright Test · cron]
+    SRV --> UIT
+    AI[dops-ai<br/>Python]
+  end
+  CORE -->|SSH via bastion| SERVERS[(web servers)]
+  VIS -->|HTTPS| SITE[(site)]
+  UIT -->|HTTPS| SITE
+  AI -->|diff, ticket| LLM[(OpenAI / Claude)]
+  AI --> JIRA[(Jira)]
+```
+
+| Package             | What it does                                                                       |
+| ------------------- | ---------------------------------------------------------------------------------- |
+| `packages/core`     | Config (YAML + zod), SSH and local executors, pipeline runner, params, history, DB |
+| `packages/cli`      | `dops` command (commander)                                                         |
+| `packages/server`   | Fastify API + WebSocket live logs, background jobs, localhost only, token          |
+| `packages/web`      | Dashboard (React 19 + Vite)                                                        |
+| `packages/visual`   | Screenshots, pixel diff, HTML report, A/B mode, URL-list workspace, page compare   |
+| `packages/ui-tests` | Playwright suites, single specs, browsers, history, schedules, webhook             |
+| `python/ai-review`  | `dops-ai`: review, commit vs ticket, issue analysis, hook, board (uv, typer)       |
+
+The Node code is plain JavaScript (ES modules) with JSDoc types checked by
+`tsc --checkJs` in strict mode, so there's no build step outside the dashboard.
+
+## Quick start
+
+Requires Node.js 22 (`.nvmrc`), and for the AI part Python 3.12 with
+[uv](https://docs.astral.sh/uv/).
 
 ```bash
 npm install
-cp examples/dops.config.example.yml dops.config.yml   # adjust targets and pipelines
+npx playwright install chromium                     # for visual checks and UI tests
+cp examples/dops.config.example.yml dops.config.yml # targets, pipelines, URL sets, suites
+cp .env.example .env                                # values referenced from the config
 
+npx dops --help
+```
+
+## Deploy pipelines
+
+```bash
 npx dops pipelines                    # what can I run?
 npx dops deploy cache-clear --dry-run # show the commands per target
 npx dops deploy deploy                # run it, with live output
@@ -46,6 +154,8 @@ succeeded and the output really is gzip.
 
 ## Dashboard
 
+![Live run of a pipeline on two servers](docs/screenshots/run.png)
+
 ```bash
 npm run build                 # builds the React dashboard once
 npx dops serve                # http://127.0.0.1:4800
@@ -57,6 +167,15 @@ any one-off command (`drush status`, `tail -n 50 …/php-error.log`) on the
 ticked servers, and the Local tab does the same on this machine. It only listens on
 localhost and every API call needs a token (`DOPS_TOKEN`, or the one printed
 on start). Exposing it on another interface requires `DOPS_ALLOW_REMOTE=1`.
+The sidebar groups everything: Deploy (pipelines, local, editor,
+parameters, runs), QA (UI tests, visual testing, page compare, reports) and
+AI & Jira (review, Jira, board).
+
+| Pipelines and quick command               | Visual testing                                 |
+| ----------------------------------------- | ---------------------------------------------- |
+| ![Pipelines](docs/screenshots/deploy.png) | ![Visual testing](docs/screenshots/visual.png) |
+| **UI tests and schedules**                | **Jira issue with AI analysis**                |
+| ![UI tests](docs/screenshots/tests.png)   | ![Jira](docs/screenshots/jira.png)             |
 
 Pipelines and parameters can also be created in the dashboard (Editor and
 Parameters tabs) from templates such as "Drupal deploy" or "Deploy with
@@ -176,3 +295,25 @@ analysis (acceptance criteria, risks, questions, steps); the Board tab runs
 the reports.
 
 See [python/ai-review/README.md](python/ai-review/README.md).
+
+## Development
+
+```bash
+npm run check              # eslint + tsc --checkJs + vitest
+npm run format:check
+npm run build              # dashboard
+npm run test:integration   # Docker: real sshd bastion + target, pipeline and dump through the tunnel
+
+cd python/ai-review
+uv run ruff check && uv run mypy && uv run pytest
+```
+
+CI runs all three on every push.
+
+## Contact
+
+Questions, ideas or collaboration: Telegram [@dimidjy](https://t.me/dimidjy).
+
+## License
+
+[MIT](LICENSE)
