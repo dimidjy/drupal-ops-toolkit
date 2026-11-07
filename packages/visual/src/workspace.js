@@ -3,6 +3,7 @@ import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { chromium } from 'playwright';
 import { PNG } from 'pngjs';
+import { eachPage, guardedContext } from './capture.js';
 import { diffImages } from './compare.js';
 
 /**
@@ -46,6 +47,9 @@ export const TRACKER_HOSTS = [
  * @property {string} file
  * @property {number} status HTTP status, 0 when the page failed.
  * @property {string} [error]
+ * @property {string} [blocked] Why a navigation off the listed sites was stopped.
+ * @property {string} [fatal] Drupal or PHP error text found on the page.
+ * @property {string} [broken] Set when the page did not load correctly.
  * @property {string} capturedAt
  *
  * @typedef {object} WorkspaceDiff
@@ -98,6 +102,10 @@ export function parseUrlList(text) {
  * optional basic auth, cookies, tracker blocking and a settle delay.
  * Results come back in the order of `urls`; `onPage` fires as pages finish.
  *
+ * Navigations can only reach the origins in the list, and basic auth is only
+ * sent to the origin of the page being captured: each origin gets its own
+ * browser context with its credentials bound to it.
+ *
  * @param {string[]} urls
  * @param {string} outDir
  * @param {WorkspaceCaptureOptions} options
@@ -108,79 +116,56 @@ export function parseUrlList(text) {
 export async function captureUrls(urls, outDir, options, hooks = {}) {
   const { fileName = urlFileName, onPage, signal } = hooks;
   await mkdir(outDir, { recursive: true });
+  const allowed = new Set(urls.map((url) => new URL(url).origin));
+  /** @type {Map<string, number[]>} */
+  const byOrigin = new Map();
+  for (const [index, url] of urls.entries()) {
+    const origin = new URL(url).origin;
+    byOrigin.set(origin, [...(byOrigin.get(origin) ?? []), index]);
+  }
+  /** @param {string} url */
+  const isTracker = (url) => TRACKER_HOSTS.some((host) => url.includes(host));
+
   const browser = await chromium.launch();
   /** @type {CapturedPage[]} */
   const pages = [];
   try {
-    const context = await browser.newContext({
-      viewport: options.viewport,
-      ignoreHTTPSErrors: true,
-      reducedMotion: 'reduce',
-      ...(options.credentials ? { httpCredentials: options.credentials } : {}),
-    });
-    if (options.cookies?.length) {
-      // Cookies without a domain apply to every site in the list.
-      const origins = [...new Set(urls.map((url) => new URL(url).origin))];
-      /** @type {{ name: string, value: string, url?: string, domain?: string, path?: string }[]} */
-      const cookies = [];
-      for (const { name, value, domain, path } of options.cookies) {
-        if (domain) cookies.push({ name, value, domain, path: path ?? '/' });
-        else for (const url of origins) cookies.push({ name, value, url });
+    for (const [origin, indexes] of byOrigin) {
+      if (signal?.aborted) break;
+      const { context, shoot } = await guardedContext(browser, {
+        viewport: options.viewport,
+        allowed,
+        ...(options.credentials ? { credentials: { ...options.credentials, origin } } : {}),
+        ...(options.blockTrackers ? { blockRequest: isTracker } : {}),
+      });
+      if (options.cookies?.length) {
+        await context.addCookies(
+          options.cookies.map(({ name, value, domain, path }) =>
+            domain ? { name, value, domain, path: path ?? '/' } : { name, value, url: origin },
+          ),
+        );
       }
-      await context.addCookies(cookies);
-    }
-    if (options.blockTrackers) {
-      await context.route('**/*', (route) =>
-        TRACKER_HOSTS.some((host) => route.request().url().includes(host))
-          ? route.abort()
-          : route.continue(),
-      );
-    }
-
-    let next = 0;
-    const worker = async () => {
-      const page = await context.newPage();
-      while (next < urls.length && !signal?.aborted) {
-        const index = next++;
-        const url = /** @type {string} */ (urls[index]);
-        const file = fileName(url, index);
-        /** @type {CapturedPage} */
-        let result;
-        try {
-          const response = await page.goto(url, { waitUntil: 'networkidle', timeout: 60_000 });
-          if (options.hide?.length) {
-            await page.addStyleTag({
-              content: `${options.hide.join(', ')} { visibility: hidden !important; }`,
-            });
-          }
-          if (options.settleMs) await page.waitForTimeout(options.settleMs);
-          await page.screenshot({
-            path: join(outDir, file),
+      await eachPage(
+        context,
+        indexes,
+        options.concurrency ?? 1,
+        async (page, index) => {
+          const url = /** @type {string} */ (urls[index]);
+          const file = fileName(url, index);
+          const outcome = await shoot(page, url, join(outDir, file), {
             fullPage: options.fullPage,
-            animations: 'disabled',
+            ...(options.hide ? { hide: options.hide } : {}),
+            ...(options.settleMs ? { settleMs: options.settleMs } : {}),
           });
-          result = {
-            url,
-            file,
-            status: response?.status() ?? 0,
-            capturedAt: new Date().toISOString(),
-          };
-        } catch (error) {
-          result = {
-            url,
-            file,
-            status: 0,
-            error: (error instanceof Error ? error.message : String(error)).split('\n')[0],
-            capturedAt: new Date().toISOString(),
-          };
-        }
-        pages[index] = result;
-        onPage?.(result, index);
-      }
-      await page.close();
-    };
-    const workers = Math.max(1, Math.min(options.concurrency ?? 1, 16, urls.length));
-    await Promise.all(Array.from({ length: workers }, worker));
+          const result = { url, file, ...outcome, capturedAt: new Date().toISOString() };
+          pages[index] = result;
+          onPage?.(result, index);
+          return outcome;
+        },
+        signal,
+      );
+      await context.close();
+    }
   } finally {
     await browser.close();
   }
@@ -276,6 +261,10 @@ export class VisualWorkspace {
       const beforeInfo = manifest.before[file];
       const afterInfo = manifest.after[file];
       const url = afterInfo?.url ?? beforeInfo?.url ?? file;
+      if (afterInfo?.broken) {
+        results.push({ url, file, status: 'error', message: `After: ${afterInfo.broken}` });
+        continue;
+      }
       try {
         const [a, b] = await Promise.all([
           readFile(join(this.phaseDir('before'), file)),
@@ -324,6 +313,9 @@ export class VisualWorkspace {
       done: index >= pairs.length,
       onlyBefore: before.length - pairs.length,
       onlyAfter: afterSet.size - pairs.length,
+      broken: Object.values(manifest.after).flatMap((page) =>
+        page.broken ? [{ url: page.url, reason: page.broken }] : [],
+      ),
       results,
     };
   }

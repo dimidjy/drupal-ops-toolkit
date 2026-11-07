@@ -6,7 +6,70 @@ import { join } from 'node:path';
 import { chromium } from 'playwright';
 import { PNG } from 'pngjs';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { VisualWorkspace, parseUrlList, urlFileName } from '../src/workspace.js';
+import { VisualWorkspace, captureUrls, parseUrlList, urlFileName } from '../src/workspace.js';
+
+describe.skipIf(!existsSync(chromium.executablePath()))('captureUrls guards', () => {
+  /** @type {import('node:http').Server[]} */
+  const servers = [];
+  /** @type {{ server: string, url: string, auth: boolean }[]} */
+  const hits = [];
+  let siteA = '';
+  let siteB = '';
+  let outside = '';
+
+  /**
+   * @param {string} label
+   * @param {(path: string) => { status: number, location?: string, body?: string }} respond
+   */
+  const listen = async (label, respond) => {
+    const server = createServer((req, res) => {
+      hits.push({ server: label, url: req.url ?? '', auth: Boolean(req.headers.authorization) });
+      if (!req.headers.authorization) {
+        res.writeHead(401, { 'www-authenticate': 'Basic realm="site"' });
+        res.end();
+        return;
+      }
+      const { status, location, body } = respond((req.url ?? '').split('?')[0] ?? '');
+      res.writeHead(status, { 'content-type': 'text/html', ...(location ? { location } : {}) });
+      res.end(body ?? `<h1>${label}</h1>`);
+    });
+    servers.push(server);
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve(undefined)));
+    const address = server.address();
+    return `http://127.0.0.1:${typeof address === 'object' && address ? address.port : 0}`;
+  };
+
+  beforeAll(async () => {
+    outside = await listen('outside', () => ({ status: 200 }));
+    siteB = await listen('b', () => ({ status: 200 }));
+    siteA = await listen('a', (path) =>
+      path === '/leave' ? { status: 302, location: `${outside}/landed` } : { status: 200 },
+    );
+  });
+
+  afterAll(() =>
+    Promise.all(
+      servers.map((server) => new Promise((resolve) => server.close(() => resolve(undefined)))),
+    ),
+  );
+
+  it('blocks redirects off the list and sends credentials only to each page’s own site', async () => {
+    const out = await mkdtemp(join(tmpdir(), 'dops-urls-'));
+    const pages = await captureUrls([`${siteA}/`, `${siteA}/leave`, `${siteB}/`], out, {
+      viewport: { width: 400, height: 300 },
+      fullPage: false,
+      credentials: { username: 'qa', password: 's3cret' },
+      concurrency: 1,
+    });
+    expect(pages.map((page) => [page.status, page.broken ?? null])).toEqual([
+      [200, null],
+      [0, `navigation outside the URL set: ${outside}/landed`],
+      [200, null],
+    ]);
+    expect(hits.filter((hit) => hit.server === 'outside')).toEqual([]);
+    expect(hits.some((hit) => hit.server === 'b' && hit.auth)).toBe(true);
+  }, 60_000);
+});
 
 /**
  * @param {number} width

@@ -134,6 +134,7 @@ export function VisualTesting({ api }) {
             done: false,
             onlyBefore: 0,
             onlyAfter: 0,
+            broken: [],
             results: [],
             loading: true,
           }
@@ -258,9 +259,27 @@ export function VisualTesting({ api }) {
               </span>
             )}
           </div>
-          {compare.done && !compare.results.length && !compare.loading && (
-            <p className="ok-text">No differences: every compared page looks the same.</p>
+          {compare.broken.length > 0 && (
+            <div className="error">
+              <strong>
+                {compare.broken.length} page(s) did not load correctly in &quot;after&quot;, so they
+                cannot pass:
+              </strong>
+              <ul className="page-errors">
+                {compare.broken.map((page) => (
+                  <li key={page.url}>
+                    {page.url} · {page.reason}
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
+          {compare.done &&
+            !compare.results.length &&
+            !compare.broken.length &&
+            !compare.loading && (
+              <p className="ok-text">No differences: every compared page looks the same.</p>
+            )}
           <ul className="diff-list">
             {compare.results.map((result) => (
               <DiffCard key={result.url} result={result} />

@@ -64,6 +64,7 @@
  * @property {boolean} done
  * @property {number} onlyBefore
  * @property {number} onlyAfter
+ * @property {{ url: string, reason: string }[]} broken Pages that did not load correctly in "after".
  * @property {VisualDiffInfo[]} results
  */
 

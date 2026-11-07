@@ -198,40 +198,165 @@ export function brokenReason(result) {
  */
 
 /**
- * Opens one URL and screenshots it, unless it ended up on another site.
+ * How one page load went. `broken` is set when it cannot count as a pass.
  *
- * @param {import('playwright').Page} page
- * @param {URL} url
- * @param {string} file
- * @param {CaptureOptions & { token: string, allowed: Set<string> }} options
- * @returns {Promise<{ status: number, fatal?: string, offOrigin?: string }>}
+ * @typedef {object} PageOutcome
+ * @property {number} status HTTP status (0 when the page failed to load).
+ * @property {string} [error]
+ * @property {string} [blocked]
+ * @property {string} [fatal]
+ * @property {string} [broken]
  */
-async function screenshotPage(page, url, file, options) {
-  const target = options.cacheBust ? cacheBusted(url, options.token) : url.href;
-  const response = await page.goto(target, { waitUntil: 'networkidle', timeout: 45_000 });
-  const status = response?.status() ?? 0;
-  const finalOrigin = new URL(page.url()).origin;
-  if (!options.allowed.has(finalOrigin)) {
-    return { status, offOrigin: `redirected off the URL set to ${finalOrigin}` };
-  }
-  const html = await page.content();
-  const fatal = FATAL_PATTERNS.map((pattern) => html.match(pattern)?.[0]).find(Boolean);
-  if (options.hide.length) {
-    await page.addStyleTag({
-      content: `${options.hide.join(', ')} { visibility: hidden !important; }`,
-    });
-  }
-  await page.screenshot({ path: file, fullPage: options.fullPage, animations: 'disabled' });
-  return fatal ? { status, fatal } : { status };
+
+/**
+ * @typedef {object} GuardedContextOptions
+ * @property {{ width: number, height: number }} viewport
+ * @property {Set<string>} allowed Origins navigations may reach.
+ * @property {{ username: string, password: string, origin: string }} [credentials] Basic
+ *   auth, only ever sent to `origin`.
+ * @property {(url: string) => boolean} [blockRequest] Sub-requests to drop, e.g. trackers.
+ *
+ * @typedef {object} ShotOptions
+ * @property {boolean} fullPage
+ * @property {string[]} [hide]
+ * @property {number} [settleMs]
+ * @property {boolean} [cacheBust]
+ * @property {string} [token] Value of the cache-busting parameter.
+ */
+
+/**
+ * A browser context whose top-level navigations can only reach `allowed`
+ * origins: every redirect hop is checked before the browser requests it, and a
+ * hop that cannot be checked is blocked. `shoot` loads one page through it and
+ * screenshots it, unless the page ended up elsewhere.
+ *
+ * @param {import('playwright').Browser} browser
+ * @param {GuardedContextOptions} options
+ */
+export async function guardedContext(browser, { viewport, allowed, credentials, blockRequest }) {
+  const context = await browser.newContext({
+    viewport,
+    ignoreHTTPSErrors: true,
+    reducedMotion: 'reduce',
+    ...(credentials ? { httpCredentials: credentials } : {}),
+  });
+
+  /** @type {WeakMap<import('playwright').Page, string>} */
+  const blockedBy = new WeakMap();
+  await context.route('**/*', async (route) => {
+    try {
+      const request = route.request();
+      if (!request.isNavigationRequest()) {
+        if (blockRequest?.(request.url())) return await route.abort();
+        return await route.continue();
+      }
+      /** @type {import('playwright').Frame | null} */
+      let frame = null;
+      try {
+        frame = request.frame();
+      } catch {
+        frame = null;
+      }
+      if (frame?.parentFrame()) return await route.continue();
+      const block = async (/** @type {string} */ reason) => {
+        const page = frame?.page();
+        if (page && !blockedBy.has(page)) blockedBy.set(page, stripCacheBust(reason));
+        await route.abort('blockedbyclient');
+      };
+      if (request.method() !== 'GET') {
+        return await block(`${request.method()} navigation to ${request.url()}`);
+      }
+      const verdict = await verifyNavigation(route, request.url(), allowed, 30_000);
+      if ('blocked' in verdict) return await block(verdict.blocked);
+      return await route.fulfill({ response: verdict.response });
+    } catch {
+      await route.abort('blockedbyclient').catch(() => undefined);
+    }
+  });
+
+  /**
+   * @param {import('playwright').Page} page
+   * @param {string} url
+   * @param {string} file
+   * @param {ShotOptions} options
+   * @returns {Promise<PageOutcome>}
+   */
+  const shoot = async (page, url, file, options) => {
+    blockedBy.delete(page);
+    /** @type {PageOutcome} */
+    let outcome;
+    try {
+      const target = options.cacheBust ? cacheBusted(new URL(url), options.token ?? '') : url;
+      const response = await page.goto(target, { waitUntil: 'networkidle', timeout: 60_000 });
+      outcome = { status: response?.status() ?? 0 };
+      const finalOrigin = new URL(page.url()).origin;
+      const blocked = blockedBy.get(page);
+      if (blocked) {
+        outcome.blocked = blocked;
+      } else if (!allowed.has(finalOrigin)) {
+        outcome.blocked = `redirected off the allowed sites to ${finalOrigin}`;
+      } else {
+        const html = await page.content();
+        const fatal = FATAL_PATTERNS.map((pattern) => html.match(pattern)?.[0]).find(Boolean);
+        if (fatal) outcome.fatal = fatal;
+        if (options.hide?.length) {
+          await page.addStyleTag({
+            content: `${options.hide.join(', ')} { visibility: hidden !important; }`,
+          });
+        }
+        if (options.settleMs) await page.waitForTimeout(options.settleMs);
+        await page.screenshot({ path: file, fullPage: options.fullPage, animations: 'disabled' });
+      }
+    } catch (error) {
+      const blocked = blockedBy.get(page);
+      const message = error instanceof Error ? error.message : String(error);
+      outcome = blocked
+        ? { status: 0, blocked }
+        : { status: 0, error: stripCacheBust(message.split('\n')[0] ?? message) };
+    }
+    const broken = brokenReason(outcome);
+    if (broken) outcome.broken = broken;
+    return outcome;
+  };
+
+  return { context, shoot };
+}
+
+/**
+ * Runs `work` for every index with at most `concurrency` pages open; a page is
+ * replaced after a blocked or failed load so a dead tab never poisons the next one.
+ *
+ * @param {import('playwright').BrowserContext} context
+ * @param {number[]} indexes
+ * @param {number} concurrency
+ * @param {(page: import('playwright').Page, index: number) => Promise<PageOutcome>} work
+ * @param {AbortSignal} [signal]
+ */
+export async function eachPage(context, indexes, concurrency, work, signal) {
+  let next = 0;
+  const worker = async () => {
+    let page = await context.newPage();
+    while (next < indexes.length && !signal?.aborted) {
+      const index = /** @type {number} */ (indexes[next++]);
+      const outcome = await work(page, index);
+      if (outcome.blocked || outcome.error) {
+        await page.close();
+        page = await context.newPage();
+      }
+    }
+    await page.close();
+  };
+  const workers = Math.max(1, Math.min(concurrency, 16, indexes.length));
+  await Promise.all(Array.from({ length: workers }, worker));
 }
 
 /**
  * Screenshots every path of a URL set into `outDir`, several tabs at a time.
  * Results come back in the order of `urlSet.paths`; `onPage` fires as pages finish.
  *
- * Navigations may only reach the set's own origin (and `allowedOrigins`): every
- * redirect hop is checked before the browser requests it, so a misconfigured
- * environment cannot send the capture, or its credentials, to another site.
+ * Navigations may only reach the set's own origin (and `allowedOrigins`), so a
+ * misconfigured environment cannot send the capture, or its credentials, to
+ * another site.
  *
  * @param {UrlSet} urlSet
  * @param {string} outDir
@@ -247,90 +372,37 @@ export async function captureSet(urlSet, outDir, options, onPage, env = process.
   await mkdir(outDir, { recursive: true });
   const browser = await chromium.launch();
   try {
-    const context = await browser.newContext({
+    const { context, shoot } = await guardedContext(browser, {
       viewport: options.viewport,
-      ignoreHTTPSErrors: true,
-      reducedMotion: 'reduce',
+      allowed,
       ...(credentials
-        ? { httpCredentials: { ...credentials, origin: new URL(urlSet.baseUrl).origin } }
+        ? { credentials: { ...credentials, origin: new URL(urlSet.baseUrl).origin } }
         : {}),
     });
-
-    /** @type {WeakMap<import('playwright').Page, string>} */
-    const blockedBy = new WeakMap();
-    await context.route('**/*', async (route) => {
-      try {
-        const request = route.request();
-        if (!request.isNavigationRequest()) return await route.continue();
-        /** @type {import('playwright').Frame | null} */
-        let frame = null;
-        try {
-          frame = request.frame();
-        } catch {
-          frame = null;
-        }
-        if (frame?.parentFrame()) return await route.continue();
-        const block = async (/** @type {string} */ reason) => {
-          const page = frame?.page();
-          if (page && !blockedBy.has(page)) blockedBy.set(page, stripCacheBust(reason));
-          await route.abort('blockedbyclient');
-        };
-        if (request.method() !== 'GET') {
-          return await block(`${request.method()} navigation to ${request.url()}`);
-        }
-        const verdict = await verifyNavigation(route, request.url(), allowed, 30_000);
-        if ('blocked' in verdict) return await block(verdict.blocked);
-        return await route.fulfill({ response: verdict.response });
-      } catch {
-        await route.abort('blockedbyclient').catch(() => undefined);
-      }
-    });
-
     /** @type {CaptureResult[]} */
     const results = new Array(urlSet.paths.length);
-    let next = 0;
-
-    const worker = async () => {
-      let page = await context.newPage();
-      while (next < urlSet.paths.length) {
-        const index = next++;
-        const path = /** @type {string} */ (urlSet.paths[index]);
-        const file = join(outDir, screenshotName(path));
-        blockedBy.delete(page);
-        /** @type {CaptureResult} */
-        let result;
-        try {
-          const url = pageUrl(path, urlSet.baseUrl);
-          const shot = await screenshotPage(page, url, file, {
-            ...options,
-            token,
-            allowed,
-          });
-          result = { path, file, status: shot.status };
-          if (shot.fatal) result.fatal = shot.fatal;
-          const blocked = blockedBy.get(page) ?? shot.offOrigin;
-          if (blocked) result.blocked = blocked;
-        } catch (error) {
-          const blocked = blockedBy.get(page);
-          const message = error instanceof Error ? error.message : String(error);
-          result = blocked
-            ? { path, file, status: 0, blocked }
-            : { path, file, status: 0, error: stripCacheBust(message) };
-        }
-        const broken = brokenReason(result);
-        if (broken) result.broken = broken;
-        results[index] = result;
-        onPage?.(result);
-        if (result.blocked || result.error) {
-          await page.close();
-          page = await context.newPage();
-        }
+    await eachPage(context, [...urlSet.paths.keys()], options.concurrency, async (page, index) => {
+      const path = /** @type {string} */ (urlSet.paths[index]);
+      const file = join(outDir, screenshotName(path));
+      /** @type {PageOutcome} */
+      let outcome;
+      try {
+        const url = pageUrl(path, urlSet.baseUrl).href;
+        outcome = await shoot(page, url, file, {
+          fullPage: options.fullPage,
+          hide: options.hide,
+          cacheBust: options.cacheBust ?? false,
+          token,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        outcome = { status: 0, error: message, broken: message };
       }
-      await page.close();
-    };
-
-    const workers = Math.max(1, Math.min(options.concurrency, urlSet.paths.length));
-    await Promise.all(Array.from({ length: workers }, worker));
+      const result = { path, file, ...outcome };
+      results[index] = result;
+      onPage?.(result);
+      return outcome;
+    });
     return results;
   } finally {
     await browser.close();

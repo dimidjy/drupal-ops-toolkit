@@ -66,7 +66,7 @@ export class VisualJobs {
           job.pages.push({
             url: page.url,
             status: page.status,
-            ...(page.error ? { error: page.error } : {}),
+            ...(page.broken ? { error: page.broken } : {}),
           }),
         signal,
       )
@@ -171,7 +171,7 @@ export class PairJobs {
           signal,
           onPage: (side, page) => {
             job.captured++;
-            if (page.error) job.errors.push({ side, url: page.url, error: page.error });
+            if (page.broken) job.errors.push({ side, url: page.url, error: page.broken });
           },
         }),
       )

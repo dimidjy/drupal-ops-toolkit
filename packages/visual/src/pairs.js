@@ -82,13 +82,13 @@ export async function comparePairs({
     const urlB = /** @type {string} */ (urlsB[index]);
     const a = pagesA[index];
     const b = pagesB[index];
-    if (!a || !b || a.error || b.error) {
+    if (!a || !b || a.broken || b.broken) {
       results.push({
         index,
         urlA,
         urlB,
         status: 'error',
-        message: a?.error ?? b?.error ?? 'Not captured',
+        message: a?.broken ? `A: ${a.broken}` : b?.broken ? `B: ${b.broken}` : 'Not captured',
       });
       continue;
     }
