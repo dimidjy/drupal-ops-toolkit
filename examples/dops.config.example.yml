@@ -108,6 +108,7 @@ visual:
   maxDiffRatio: 0.001 # page counts as changed above 0.1 % differing pixels
   concurrency: 4 # browser tabs per capture
   hide: ['.messages', '.views-slideshow'] # dynamic bits that would always differ
+  cacheBust: true # unique query parameter per capture, so Varnish serves fresh pages
   urlSets:
     demo:
       baseUrl: https://hdcr.ddev.site

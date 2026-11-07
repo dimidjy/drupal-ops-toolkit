@@ -63,6 +63,8 @@ const urlSet = z.object({
   /** Other deployments of the same site, e.g. { prod: "https://www.example.com" }. */
   environments: z.record(name, z.string().url()).default({}),
   httpAuth: httpAuth.optional(),
+  /** Other origins a capture may be redirected to, e.g. a language subdomain. */
+  allowedOrigins: z.array(z.string().url()).optional(),
 });
 
 const visual = z.object({
@@ -79,6 +81,8 @@ const visual = z.object({
   concurrency: z.number().int().min(1).max(16).default(4),
   /** CSS selectors hidden before the screenshot (carousels, timestamps…). */
   hide: z.array(z.string()).default([]),
+  /** Add a unique query parameter to every page so Varnish or a CDN serves it fresh. */
+  cacheBust: z.boolean().default(false),
   urlSets: z.record(name, urlSet).default({}),
 });
 

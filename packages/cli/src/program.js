@@ -1,4 +1,6 @@
 import { spawn } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { Command } from 'commander';
 import pc from 'picocolors';
@@ -29,7 +31,13 @@ import {
   scheduleFile,
   startScheduler,
 } from '@dops/ui-tests';
-import { captureSet, compareDirs, forEnvironment, writeReport } from '@dops/visual';
+import {
+  assertSafeLabel,
+  captureSet,
+  compareDirs,
+  forEnvironment,
+  writeReport,
+} from '@dops/visual';
 import { formatEvent, formatTestRun } from './output.js';
 
 /** @import { Config, Target, CommandExecutor } from '@dops/core' */
@@ -303,28 +311,97 @@ export function createProgram(overrides = {}) {
 
   /**
    * Screenshots a URL set (optionally one of its environments) into `<set>/<label>`.
+   * An existing capture is only replaced with `force`, and only once the new one
+   * has finished, so a failed run never destroys a baseline.
    *
    * @param {Config} cfg
    * @param {string} setName
    * @param {string} label
    * @param {string} [environment]
-   * @returns {Promise<boolean>} false when a page failed to load
+   * @param {boolean} [force]
+   * @param {string[]} [paths] Pages to capture instead of the set's own list.
+   * @returns {Promise<boolean>} false when a page did not load correctly
    */
-  const capture = async (cfg, setName, label, environment) => {
-    const urlSet = forEnvironment(urlSetOf(cfg, setName), environment);
+  const capture = async (cfg, setName, label, environment, force = false, paths) => {
+    assertSafeLabel(label);
+    const configured = forEnvironment(urlSetOf(cfg, setName), environment);
+    const urlSet = paths?.length ? { ...configured, paths } : configured;
     const outDir = join(cfg.visual.outputDir, setName, label);
+    if (existsSync(outDir) && !force) {
+      throw new Error(`Capture "${label}" already exists in ${outDir}; pass --force to replace it`);
+    }
+    const workDir = `${outDir}.partial`;
+    await rm(workDir, { recursive: true, force: true });
     ctx.write(
       `${pc.bold(`Capturing ${urlSet.paths.length} pages`)} of ${urlSet.baseUrl} → ${outDir}\n`,
     );
-    const results = await captureSet(urlSet, outDir, cfg.visual, (result) => {
-      const status = result.error
-        ? pc.red(result.error.split('\n')[0] ?? 'error')
-        : result.status >= 400
-          ? pc.yellow(String(result.status))
-          : pc.green(String(result.status));
-      ctx.write(`  ${pc.dim(`[${label}]`)} ${status} ${result.path}\n`);
+    const results = await captureSet(urlSet, workDir, cfg.visual, (result) => {
+      const status = result.broken
+        ? pc.red(result.status >= 400 ? String(result.status) : 'broken')
+        : pc.green(String(result.status));
+      const reason = result.broken ? pc.dim(` · ${result.broken}`) : '';
+      ctx.write(`  ${pc.dim(`[${label}]`)} ${status} ${result.path}${reason}\n`);
     });
-    return !results.some((result) => result.error);
+    const meta = {
+      label,
+      environment: environment ?? null,
+      baseUrl: urlSet.baseUrl,
+      finishedAt: new Date().toISOString(),
+      pages: results.map(({ path, status, broken }) => ({ path, status, broken: broken ?? null })),
+    };
+    await writeFile(join(workDir, 'meta.json'), `${JSON.stringify(meta, null, 2)}\n`);
+    await rm(outDir, { recursive: true, force: true });
+    await rename(workDir, outDir);
+    const broken = results.filter((result) => result.broken);
+    if (broken.length) {
+      ctx.write(pc.red(`${broken.length} of ${results.length} pages did not load correctly\n`));
+    }
+    return !broken.length;
+  };
+
+  /**
+   * Pages for a capture: those of an earlier capture (`like`), or the set's own
+   * list plus `extra`. Undefined keeps the set's list as is.
+   *
+   * @param {Config} cfg
+   * @param {string} setName
+   * @param {string[]} extra
+   * @param {string} [like]
+   * @returns {Promise<string[] | undefined>}
+   */
+  const capturePaths = async (cfg, setName, extra, like) => {
+    for (const path of extra) {
+      if (!path.startsWith('/') || path.startsWith('//')) {
+        throw new Error(`Bad path "${path}": use a path on the site, e.g. /events`);
+      }
+    }
+    if (like) {
+      assertSafeLabel(like);
+      const file = join(cfg.visual.outputDir, setName, like, 'meta.json');
+      if (!existsSync(file)) throw new Error(`Capture "${like}" not found (no ${file})`);
+      /** @type {{ pages: { path: string }[] }} */
+      const meta = JSON.parse(await readFile(file, 'utf8'));
+      return meta.pages.map((page) => page.path);
+    }
+    if (!extra.length) return undefined;
+    return [...new Set([...urlSetOf(cfg, setName).paths, ...extra])];
+  };
+
+  /**
+   * Pages a finished capture recorded as broken (empty for captures made before
+   * meta.json existed).
+   *
+   * @param {string} dir
+   * @returns {Promise<{ path: string, broken: string }[]>}
+   */
+  const brokenPagesOf = async (dir) => {
+    const file = join(dir, 'meta.json');
+    if (!existsSync(file)) return [];
+    /** @type {{ pages?: { path: string, broken: string | null }[] }} */
+    const meta = JSON.parse(await readFile(file, 'utf8'));
+    return (meta.pages ?? []).flatMap((page) =>
+      page.broken ? [{ path: page.path, broken: page.broken }] : [],
+    );
   };
 
   /**
@@ -335,9 +412,12 @@ export function createProgram(overrides = {}) {
    * @param {string} before
    * @param {string} after
    * @param {string} title
-   * @returns {Promise<number>} number of pages that differ
+   * @returns {Promise<{ changed: number, broken: number }>} pages that differ, and pages
+   *   that did not load correctly in the "after" capture
    */
   const compare = async (cfg, setName, before, after, title) => {
+    assertSafeLabel(before);
+    assertSafeLabel(after);
     urlSetOf(cfg, setName);
     const dir = join(cfg.visual.outputDir, setName);
     const beforeDir = join(dir, before);
@@ -366,8 +446,25 @@ export function createProgram(overrides = {}) {
       join(dir, `report-${pair}.html`),
     );
     ctx.write(`\n${changed} of ${results.length} pages differ · report: ${report}\n`);
-    return changed;
+    const broken = await brokenPagesOf(afterDir);
+    if (broken.length) {
+      ctx.write(
+        pc.red(
+          `${broken.length} page(s) did not load correctly in "${after}", so they cannot pass:\n`,
+        ),
+      );
+      for (const page of broken)
+        ctx.write(`  ${pc.red('broken ')} ${page.path} · ${page.broken}\n`);
+    }
+    return { changed, broken: broken.length };
   };
+
+  /**
+   * Exit code of a comparison: 2 when pages are broken, 1 when pages differ.
+   *
+   * @param {{ changed: number, broken: number }} outcome
+   */
+  const compareExitCode = ({ changed, broken }) => (broken ? 2 : changed ? 1 : 0);
 
   const visual = program.command('visual').description('screenshot pages and compare them');
 
@@ -377,11 +474,22 @@ export function createProgram(overrides = {}) {
     .argument('<set>', 'URL set from visual.urlSets')
     .option('-l, --label <label>', 'name of this capture (default: environment or "before")')
     .option('-e, --env <name>', 'capture one of the environments listed in the URL set')
-    .action(async (setName, /** @type {{ label?: string, env?: string }} */ options) => {
-      const cfg = await config();
-      const label = options.label ?? options.env ?? 'before';
-      if (!(await capture(cfg, setName, label, options.env))) process.exitCode = 1;
-    });
+    .option('-f, --force', 'replace an existing capture with the same label')
+    .option('-p, --path <path...>', 'extra pages to capture besides the set, e.g. /events')
+    .option('--like <label>', 'capture the same pages as an earlier capture of the set')
+    .action(
+      async (
+        setName,
+        /** @type {{ label?: string, env?: string, force?: boolean, path?: string[], like?: string }} */ options,
+      ) => {
+        const cfg = await config();
+        const label = options.label ?? options.env ?? 'before';
+        const paths = await capturePaths(cfg, setName, options.path ?? [], options.like);
+        if (!(await capture(cfg, setName, label, options.env, options.force, paths))) {
+          process.exitCode = 1;
+        }
+      },
+    );
 
   visual
     .command('compare')
@@ -392,7 +500,8 @@ export function createProgram(overrides = {}) {
     .action(async (setName, /** @type {{ before: string, after: string }} */ options) => {
       const cfg = await config();
       const title = `Visual diff · ${setName}`;
-      if (await compare(cfg, setName, options.before, options.after, title)) process.exitCode = 1;
+      const outcome = await compare(cfg, setName, options.before, options.after, title);
+      if (compareExitCode(outcome)) process.exitCode = compareExitCode(outcome);
     });
 
   visual
@@ -405,11 +514,12 @@ export function createProgram(overrides = {}) {
       if (a === b) throw new Error('Pick two different environments');
       const cfg = await config();
       const captured = await Promise.all([
-        capture(cfg, setName, a, a),
-        capture(cfg, setName, b, b),
+        capture(cfg, setName, a, a, true),
+        capture(cfg, setName, b, b, true),
       ]);
-      const changed = await compare(cfg, setName, a, b, `A/B · ${setName}: ${a} vs ${b}`);
-      if (changed || captured.includes(false)) process.exitCode = 1;
+      const outcome = await compare(cfg, setName, a, b, `A/B · ${setName}: ${a} vs ${b}`);
+      const code = compareExitCode(outcome) || (captured.includes(false) ? 2 : 0);
+      if (code) process.exitCode = code;
     });
 
   /**

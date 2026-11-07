@@ -5,7 +5,125 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium } from 'playwright';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { captureSet, forEnvironment, httpCredentials, screenshotName } from '../src/capture.js';
+import {
+  assertSafeLabel,
+  brokenReason,
+  captureSet,
+  forEnvironment,
+  httpCredentials,
+  pageUrl,
+  screenshotName,
+  stripCacheBust,
+  verifyNavigation,
+} from '../src/capture.js';
+
+describe('assertSafeLabel', () => {
+  it('accepts ticket-style labels', () => {
+    expect(() => assertSafeLabel('SHOP-42-before')).not.toThrow();
+  });
+
+  it('rejects labels that could leave the output folder', () => {
+    for (const label of ['../..', 'a/b', '.hidden', '']) {
+      expect(() => assertSafeLabel(label)).toThrow(/Bad capture label/);
+    }
+  });
+});
+
+describe('pageUrl', () => {
+  it('resolves paths on the site', () => {
+    expect(pageUrl('/products?page=2', 'https://stage.example.com').href).toBe(
+      'https://stage.example.com/products?page=2',
+    );
+  });
+
+  it('rejects paths that point to another host', () => {
+    expect(() => pageUrl('//evil.example.org/x', 'https://stage.example.com')).toThrow(
+      /leaves the site/,
+    );
+    expect(() => pageUrl('/\t/evil.example.org', 'https://stage.example.com')).toThrow(
+      /leaves the site/,
+    );
+  });
+});
+
+describe('stripCacheBust', () => {
+  it('drops the cache-busting parameter from URLs and messages', () => {
+    expect(stripCacheBust('https://a.test/x?_dops=123')).toBe('https://a.test/x');
+    expect(stripCacheBust('https://a.test/x?q=1&_dops=123 failed')).toBe(
+      'https://a.test/x?q=1 failed',
+    );
+  });
+});
+
+describe('brokenReason', () => {
+  it('passes a page that loaded', () => {
+    expect(brokenReason({ status: 200 })).toBeUndefined();
+  });
+
+  it('explains why a page cannot pass', () => {
+    expect(brokenReason({ status: 401 })).toBe('HTTP 401');
+    expect(brokenReason({ status: 0 })).toBe('no response');
+    expect(brokenReason({ status: 200, fatal: 'Fatal error:' })).toBe('error page: Fatal error:');
+    expect(brokenReason({ status: 0, blocked: 'navigation outside the URL set: x' })).toMatch(
+      /outside/,
+    );
+  });
+});
+
+describe('verifyNavigation', () => {
+  const allowed = new Set(['https://stage.example.com']);
+
+  /**
+   * @param {Record<string, { status: number, location?: string } | Error>} hops
+   */
+  const fakeRoute = (hops) => {
+    /** @type {string[]} */
+    const fetched = [];
+    return {
+      fetched,
+      /** @param {{ url: string }} options */
+      fetch: async ({ url }) => {
+        fetched.push(url);
+        const hop = hops[url];
+        if (!hop) throw new Error(`unexpected fetch ${url}`);
+        if (hop instanceof Error) throw hop;
+        return {
+          status: () => hop.status,
+          headers: () => (hop.location ? { location: hop.location } : {}),
+        };
+      },
+    };
+  };
+
+  it('returns the first response when every hop stays on the site', async () => {
+    const route = fakeRoute({
+      'https://stage.example.com/a': { status: 301, location: '/b' },
+      'https://stage.example.com/b': { status: 200 },
+    });
+    const verdict = await verifyNavigation(route, 'https://stage.example.com/a', allowed, 1000);
+    expect('response' in verdict && verdict.response.status()).toBe(301);
+  });
+
+  it('stops a second hop that leaves the site before requesting it', async () => {
+    const route = fakeRoute({
+      'https://stage.example.com/a': { status: 302, location: '/b' },
+      'https://stage.example.com/b': { status: 302, location: 'https://www.example.com/b' },
+    });
+    const verdict = await verifyNavigation(route, 'https://stage.example.com/a', allowed, 1000);
+    expect(verdict).toEqual({
+      blocked: 'navigation outside the URL set: https://www.example.com/b',
+    });
+    expect(route.fetched).not.toContain('https://www.example.com/b');
+  });
+
+  it('blocks when a hop cannot be checked', async () => {
+    const route = fakeRoute({ 'https://stage.example.com/a': new Error('certificate error') });
+    const verdict = await verifyNavigation(route, 'https://stage.example.com/a', allowed, 1000);
+    expect(verdict).toEqual({
+      blocked: 'could not check https://stage.example.com/a: certificate error',
+    });
+  });
+});
 
 describe('screenshotName', () => {
   it('turns paths into file names', () => {
@@ -136,5 +254,92 @@ describe.skipIf(!hasBrowser)('captureSet', () => {
       STAGE_PASS: 's3cret',
     });
     expect(result?.status).toBe(200);
+  }, 60_000);
+});
+
+describe.skipIf(!hasBrowser)('captureSet guards', () => {
+  /** @type {import('node:http').Server[]} */
+  const servers = [];
+  let site = '';
+  let foreign = '';
+  /** @type {string[]} */
+  const foreignHits = [];
+
+  /**
+   * @param {import('node:http').RequestListener} handler
+   * @returns {Promise<string>}
+   */
+  const listen = async (handler) => {
+    const server = createServer(handler);
+    servers.push(server);
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve(undefined)));
+    const address = server.address();
+    return `http://127.0.0.1:${typeof address === 'object' && address ? address.port : 0}`;
+  };
+
+  beforeAll(async () => {
+    foreign = await listen((req, res) => {
+      foreignHits.push(req.url ?? '');
+      res.writeHead(200, { 'content-type': 'text/html' });
+      res.end('<h1>foreign</h1>');
+    });
+    site = await listen((req, res) => {
+      const path = (req.url ?? '').split('?')[0];
+      if (path === '/hop') {
+        res.writeHead(302, { location: '/hop-2' });
+        res.end();
+        return;
+      }
+      if (path === '/hop-2') {
+        res.writeHead(302, { location: `${foreign}/landed` });
+        res.end();
+        return;
+      }
+      if (path === '/fatal') {
+        res.writeHead(200, { 'content-type': 'text/html' });
+        res.end('<p>Fatal error: Allowed memory size exhausted</p>');
+        return;
+      }
+      res.writeHead(200, { 'content-type': 'text/html' });
+      res.end(`<h1>${path}</h1>`);
+    });
+  });
+
+  afterAll(() =>
+    Promise.all(
+      servers.map((server) => new Promise((resolve) => server.close(() => resolve(undefined)))),
+    ),
+  );
+
+  const options = {
+    viewport: { width: 400, height: 300 },
+    fullPage: false,
+    hide: [],
+    concurrency: 1,
+    cacheBust: true,
+  };
+
+  it('blocks a redirect chain that leaves the site and marks the page broken', async () => {
+    const out = await mkdtemp(join(tmpdir(), 'dops-visual-'));
+    const [ok, hop, fatal] = await captureSet(
+      { baseUrl: site, paths: ['/', '/hop', '/fatal'], environments: {} },
+      out,
+      options,
+    );
+    expect(ok?.broken).toBeUndefined();
+    expect(hop?.broken).toBe(`navigation outside the URL set: ${foreign}/landed`);
+    expect(foreignHits).toEqual([]);
+    expect(fatal?.broken).toBe('error page: Fatal error:');
+  }, 60_000);
+
+  it('follows redirects to origins listed in allowedOrigins', async () => {
+    const out = await mkdtemp(join(tmpdir(), 'dops-visual-'));
+    const [hop] = await captureSet(
+      { baseUrl: site, paths: ['/hop'], environments: {}, allowedOrigins: [foreign] },
+      out,
+      options,
+    );
+    expect(hop?.broken).toBeUndefined();
+    expect(foreignHits.length).toBeGreaterThan(0);
   }, 60_000);
 });
