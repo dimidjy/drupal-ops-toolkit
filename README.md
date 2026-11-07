@@ -197,8 +197,9 @@ any one-off command (`drush status`, `tail -n 50 …/php-error.log`) on the
 ticked servers. Local targets are left to the CLI. It only listens on
 localhost and every API call needs a token (`DOPS_TOKEN`, or the one printed
 on start). Exposing it on another interface requires `DOPS_ALLOW_REMOTE=1`.
-The sidebar groups everything: Deploy (pipelines, runs), QA (UI tests,
-visual testing, page compare, reports) and AI & Jira (review, Jira, board).
+The sidebar groups everything: Deploy (pipelines, runs), QA (UI tests and
+Visual, with a switch between before/after, A vs B and CLI reports) and
+AI & Jira (review, Jira, board).
 Pipelines and parameters are edited as files, not in the dashboard.
 
 | Pipelines and quick command               | Visual testing                                 |
@@ -236,7 +237,7 @@ new one has finished. `visual.cacheBust: true` adds a unique query parameter
 so Varnish or a CDN serves fresh pages. `--path /events` adds pages for one
 run, and `--like before` captures exactly the pages of an earlier capture.
 
-The dashboard's Visual tab does the same without any config: paste a list of
+The dashboard's Visual tab (Before / after) does the same without any config: paste a list of
 URLs, pick a viewport and settle delay, optionally add basic auth or cookies
 (used for that capture only), then take the "before" screenshots, deploy, take
 the "after" ones and compare. Only the pages that changed are listed, with
@@ -267,7 +268,7 @@ npx dops visual capture shop --env prod
 Pages are captured in parallel browser tabs (`visual.concurrency`, default 4).
 
 For pages that live under different URLs (an old and a new URL scheme, or two
-different sites), the dashboard's Compare tab takes two URL lists paired line
+different sites), the Visual tab's A vs B mode takes two URL lists paired line
 by line, each side with its own basic auth and cookies, and diffs every pair.
 
 ## UI tests

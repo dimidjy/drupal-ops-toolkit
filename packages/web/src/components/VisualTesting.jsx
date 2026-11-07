@@ -172,7 +172,10 @@ export function VisualTesting({ api }) {
 
   return (
     <section className="visual-testing">
-      <h2>Visual testing</h2>
+      <p className="muted mode-help">
+        The same pages twice: capture &quot;before&quot;, make the change or deploy, capture
+        &quot;after&quot;, then page through what moved.
+      </p>
       <div className="card">
         <label className="field">
           <span>Site URLs (one per line)</span>

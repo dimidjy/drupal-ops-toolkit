@@ -144,7 +144,10 @@ export function PageCompare({ api }) {
 
   return (
     <section className="visual-testing">
-      <h2>Page compare</h2>
+      <p className="muted mode-help">
+        Two lists of pages captured now and compared line by line: production against staging, old
+        URLs against new ones, or two sites. Each side has its own basic auth and cookies.
+      </p>
       <div className="card">
         <div className="two-columns">
           <label className="field">

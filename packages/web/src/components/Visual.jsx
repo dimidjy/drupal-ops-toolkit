@@ -17,7 +17,10 @@ export function Visual({ api }) {
 
   return (
     <section>
-      <h2>Visual reports</h2>
+      <p className="muted mode-help">
+        Reports written by <code>dops visual compare</code> and <code>dops visual ab</code> from the
+        URL sets in the config.
+      </p>
       {error && <p className="error">{error}</p>}
       {!reports.length && !error && (
         <p className="muted">
