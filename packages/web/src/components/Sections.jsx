@@ -101,11 +101,10 @@ export function TestsSection({ api }) {
       title="UI tests"
       tabs={[
         ['run', 'Run'],
-        ['schedules', 'Schedules'],
         ['history', 'History'],
       ]}
     >
-      {(tab) => <Tests api={api} view={/** @type {'run' | 'schedules' | 'history'} */ (tab)} />}
+      {(tab) => <Tests api={api} view={/** @type {'run' | 'history'} */ (tab)} />}
     </TabbedSection>
   );
 }

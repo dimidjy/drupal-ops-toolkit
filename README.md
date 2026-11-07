@@ -198,7 +198,7 @@ ticked servers. Local targets are left to the CLI. It only listens on
 localhost and every API call needs a token (`DOPS_TOKEN`, or the one printed
 on start). Exposing it on another interface requires `DOPS_ALLOW_REMOTE=1`.
 Every section has the same shape, a title and a switch between its tabs:
-Deploy (Pipelines, History), UI tests (Run, Schedules, History), Visual
+Deploy (Pipelines, History), UI tests (Run with its schedules, History), Visual
 (Before / after, A vs B, Reports), Review (Review, History) and Jira (Issue,
 Board, Board history).
 Pipelines and parameters are edited as files, not in the dashboard.

@@ -36,7 +36,7 @@ function describeRun(what) {
  * UI tests: run a suite or one spec file against an environment, with a URL
  * list and a browser, follow it, open its report, and schedule it.
  *
- * @param {{ api: Api, view?: 'run' | 'schedules' | 'history' }} props
+ * @param {{ api: Api, view?: 'run' | 'history' }} props
  */
 export function Tests({ api, view = 'run' }) {
   const [suites, setSuites] = useState(/** @type {TestSuiteInfo[]} */ ([]));
@@ -246,14 +246,12 @@ export function Tests({ api, view = 'run' }) {
         </>
       )}
 
-      {view === 'schedules' && suite && (
+      {view === 'run' && suite && (
         <>
+          <h3>Schedules</h3>
           <div className="card">
             <strong>Schedule this run</strong>
-            <span className="muted small">
-              {describeRun({ suite: suite.name, ...options() })} · set the suite, test, environment
-              and browser in the Run tab
-            </span>
+            <span className="muted small">{describeRun({ suite: suite.name, ...options() })}</span>
             <div className="row">
               <label className="field">
                 <span>Name</span>
