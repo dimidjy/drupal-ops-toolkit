@@ -191,14 +191,16 @@ npm run build                 # builds the React dashboard once
 npx dops serve                # http://127.0.0.1:4800
 ```
 
-The dashboard lists pipelines, starts runs on chosen targets and sites,
-streams their output live and keeps the run history. A quick-command box runs
-any one-off command (`drush status`, `tail -n 50 …/php-error.log`) on the
-ticked servers. Local targets are left to the CLI. It only listens on
+The Servers section is hands-on access to the servers, next to CI/CD rather
+than instead of it: the pipelines of the config are shown as runbooks (deploy,
+maintenance, diagnostics) that start on chosen targets and sites, stream their
+output live and land in the run history. A quick-command box runs any one-off
+command (`drush status`, `tail -n 50 …/php-error.log`) on the ticked servers.
+Local targets are left to the CLI. The dashboard only listens on
 localhost and every API call needs a token (`DOPS_TOKEN`, or the one printed
 on start). Exposing it on another interface requires `DOPS_ALLOW_REMOTE=1`.
 Every section has the same shape, a title and a switch between its tabs:
-Deploy (Pipelines, History), UI tests (Run with its schedules, History), Visual
+Servers (Runbooks, History), UI tests (Run with its schedules, History), Visual
 (Before / after, A vs B, Reports), Review (Review, History) and Jira (Issue,
 Board, Board history).
 Pipelines and parameters are edited as files, not in the dashboard.

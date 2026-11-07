@@ -70,20 +70,24 @@ export function TabbedSection({ id, title, tabs, children }) {
 }
 
 /**
+ * Hands-on work on servers: runbooks (the pipelines from the config) and quick
+ * commands, with every run kept in the history. It complements CI/CD rather
+ * than replacing it.
+ *
  * @param {{ api: Api, onOpenRun: (runId: string) => void }} props
  */
-export function DeploySection({ api, onOpenRun }) {
+export function ServersSection({ api, onOpenRun }) {
   return (
     <TabbedSection
-      id="deploy"
-      title="Deploy"
+      id="servers"
+      title="Servers"
       tabs={[
-        ['pipelines', 'Pipelines'],
+        ['runbooks', 'Runbooks'],
         ['history', 'History'],
       ]}
     >
       {(tab) =>
-        tab === 'pipelines' ? (
+        tab === 'runbooks' ? (
           <Pipelines api={api} onStarted={onOpenRun} />
         ) : (
           <History api={api} onOpen={onOpenRun} />

@@ -1,16 +1,16 @@
 import { useState } from 'react';
 import { RunView } from './components/RunView.jsx';
 import {
-  DeploySection,
   JiraSection,
   ReviewSection,
+  ServersSection,
   TestsSection,
   VisualSection,
 } from './components/Sections.jsx';
 import { TokenGate } from './components/TokenGate.jsx';
 
 const GROUPS = /** @type {const} */ ([
-  ['Deploy', [['deploy', 'Deploy']]],
+  ['Servers', [['servers', 'Servers']]],
   [
     'QA',
     [
@@ -33,12 +33,12 @@ const GROUPS = /** @type {const} */ ([
  * @param {{ api: import('./api.js').Api, logout: () => void }} props
  */
 function Dashboard({ api, logout }) {
-  const [section, setSection] = useState(/** @type {Section} */ ('deploy'));
+  const [section, setSection] = useState(/** @type {Section} */ ('servers'));
   const [runId, setRunId] = useState('');
 
   /** @type {Record<Section, () => import('react').ReactNode>} */
   const views = {
-    deploy: () => <DeploySection api={api} onOpenRun={setRunId} />,
+    servers: () => <ServersSection api={api} onOpenRun={setRunId} />,
     tests: () => <TestsSection api={api} />,
     visual: () => <VisualSection api={api} />,
     review: () => <ReviewSection api={api} />,
