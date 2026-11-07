@@ -41,7 +41,7 @@ allowed-tools: Read, Write, Edit, Grep, Glob, Bash, AskUserQuestion
 3. Створи або зміни файли за правилами вище.
 4. Перевір:
    - `<dops_cli> pipelines` — pipeline видно, цілі правильні;
-   - `<dops_cli> deploy <name> --dry-run` (з `--site <site>`, якщо кроки містять значення сайту) — команди розгорнулись правильно.
+   - `<dops_cli> run <name> --dry-run` (з `--site <site>`, якщо кроки містять значення сайту) — команди розгорнулись правильно.
 
    Помилку «Missing environment variables» не обходь: назви змінну, яку треба додати в env-файл.
 

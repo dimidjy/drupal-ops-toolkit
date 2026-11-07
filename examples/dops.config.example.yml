@@ -41,7 +41,7 @@ targets:
     path: ~/projects/shop
     environment: dev
 
-# Multisite: values become {placeholders} with `dops deploy <pipeline> --site fr`.
+# Multisite: values become {placeholders} with `dops run <pipeline> --site fr`.
 sites:
   default:
     alias: '@self'

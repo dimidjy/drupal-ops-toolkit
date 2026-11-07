@@ -53,7 +53,7 @@ disable-model-invocation: true
 9. **Перевірка.**
    - `git status --short` у проєкті: нових файлів немає.
    - `git -C <toolkit> status --short`: відстежувані файли toolkit не змінились.
-   - `<dops_cli> visual capture <visual_set> -l setup-check --force` проходить без зламаних сторінок.
+   - `<dops_cli> visual capture <visual_set> --label setup-check --force` проходить без зламаних сторінок.
 
 ## Результат
 

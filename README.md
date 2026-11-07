@@ -33,7 +33,7 @@ Everything is driven by one YAML config. Secrets never live in it.
 npx dops test run smoke                    # is staging healthy?
 npx dops visual capture shop --label before
 uv run dops-ai review --diff main...       # last look at the branch
-npx dops deploy deploy                     # pull, composer, updb, cim, cr on both web nodes
+npx dops run deploy                        # pull, composer, updb, cim, cr on both web nodes
 npx dops visual capture shop --label after
 npx dops visual compare shop               # anything that moved?
 ```
@@ -118,22 +118,29 @@ npx dops --help
 
 ```bash
 npx dops pipelines                    # what can I run?
-npx dops deploy cache-clear --dry-run # show the commands per target
-npx dops deploy deploy                # run it, with live output
+npx dops run cache-clear --dry-run    # show the commands per target
+npx dops run deploy                   # run it, with live output
 npx dops exec -t prod-web1 prod-web2 -- drush status   # one-off command
 npx dops history                      # previous runs
 npx dops history show <run-id>        # steps and full output of one run
 ```
 
-Pipelines are lists of shell steps that run on one or more targets, through
-a bastion when needed. A failing step stops the run; later targets are
-skipped so a broken release never reaches every server.
+Pipelines are lists of shell steps (runbooks) that run on one or more
+targets, through a bastion when needed. A failing step stops the run; later
+targets are skipped so a broken release never reaches every server.
+`dops deploy` is another name for `dops run`.
 
 Targets marked `production: true` (or listed in an environment file with
-`production: true`) never run by accident: the CLI refuses them without
-`--yes` (`--dry-run` always works), the dashboard asks for confirmation and
-shows them with a production badge, and the API answers 428 unless the request
-carries `confirmProduction: true`.
+`production: true`) never run by accident: `dops run`, `dops exec` and
+`dops db pull` refuse them without `--yes` (`--dry-run` always works), the
+dashboard asks for confirmation and marks them, and the API answers 428 unless
+the request carries `confirmProduction: true`. `dops pipelines` and dry runs
+mark them too.
+
+Short options mean the same everywhere: `-t` target, `-s` site, `-p` value
+for a `{placeholder}` (port for `serve`), `-e` environment, `-n` dry run,
+`-y` confirm production, `-l` limit, `-f` spec file. Everything else is a long
+option only, such as `--label`, `--path`, `--force` or `--suite`.
 
 SSH uses your key file or agent. No passwords are stored in the config.
 
@@ -218,7 +225,7 @@ diff with an HTML report:
 
 ```bash
 npx dops visual capture staging --label before
-npx dops deploy deploy
+npx dops run deploy
 npx dops visual capture staging --label after
 npx dops visual compare staging      # exit code 1 when pages differ, 2 when pages are broken
 ```

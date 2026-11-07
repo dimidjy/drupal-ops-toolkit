@@ -20,7 +20,7 @@ allowed-tools: Read, Bash, Grep, Glob, AskUserQuestion
 ## Кроки
 
 1. **Зняти «after»** тими самими сторінками:
-   `<dops_cli> visual capture <visual_set> -l <TICKET>-after --like <TICKET>-before`
+   `<dops_cli> visual capture <visual_set> --label <TICKET>-after --like <TICKET>-before`
    Якщо `<TICKET>-after` уже є, спитай, і лише за згодою додай `--force`. Якщо триває понад хвилину, запусти у фоні й повідом.
 2. **Порівняти:**
    `<dops_cli> visual compare <visual_set> --before <TICKET>-before --after <TICKET>-after`

@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { Command } from 'commander';
+import { Command, InvalidArgumentError } from 'commander';
 import pc from 'picocolors';
 import {
   DEFAULT_CONFIG_FILE,
@@ -92,20 +92,41 @@ export function createProgram(overrides = {}) {
     } catch (error) {
       if (!(error instanceof ProductionConfirmationError)) throw error;
       throw new Error(
-        `Production targets: ${error.targets.join(', ')}. Check with --dry-run, then pass --yes to run.`,
+        `Production targets: ${error.targets.join(', ')}. Check what will run first, then pass --yes.`,
       );
     }
   };
 
+  /**
+   * Parses a --limit value: a whole number from 1 to 1000.
+   *
+   * @param {string} value
+   */
+  const parseLimit = (value) => {
+    const limit = Number(value);
+    if (!Number.isInteger(limit) || limit < 1 || limit > 1000) {
+      throw new InvalidArgumentError('expected a whole number from 1 to 1000');
+    }
+    return limit;
+  };
+
+  /**
+   * A target's name, marked when it is a production server.
+   *
+   * @param {Config} cfg
+   * @param {string} name
+   */
+  const targetLabel = (cfg, name) =>
+    cfg.targets[name]?.production ? `${name} ${pc.red('(production)')}` : name;
+
   program
     .command('pipelines')
-    .description('list the pipelines defined in the configuration')
+    .description('list the pipelines (runbooks) defined in the configuration')
     .action(async () => {
-      const { pipelines } = await config();
-      for (const [name, pipeline] of Object.entries(pipelines)) {
-        ctx.write(
-          `${pc.bold(name)}  ${pc.dim(`${pipeline.steps.length} steps → ${pipeline.targets.join(', ')}`)}\n`,
-        );
+      const cfg = await config();
+      for (const [name, pipeline] of Object.entries(cfg.pipelines)) {
+        const targets = pipeline.targets.map((target) => targetLabel(cfg, target)).join(', ');
+        ctx.write(`${pc.bold(name)}  ${pc.dim(`${pipeline.steps.length} steps →`)} ${targets}\n`);
         if (pipeline.description) ctx.write(`  ${pipeline.description}\n`);
       }
     });
@@ -122,8 +143,9 @@ export function createProgram(overrides = {}) {
     });
 
   program
-    .command('deploy')
-    .description('run a pipeline on its targets')
+    .command('run')
+    .alias('deploy')
+    .description('run a pipeline (runbook) on its targets')
     .argument('<pipeline>', 'pipeline name')
     .option('-t, --target <name...>', 'run on these targets instead of the pipeline defaults')
     .option('-s, --site <name>', 'site whose parameters fill the {placeholders}')
@@ -167,7 +189,8 @@ export function createProgram(overrides = {}) {
 
         if (options.dryRun) {
           for (const [name, target] of Object.entries(targets)) {
-            ctx.write(`${pc.cyan(`[${name}]`)} ${pc.dim(describeTarget(target))}\n`);
+            const production = target.production ? ` ${pc.red('(production)')}` : '';
+            ctx.write(`${pc.cyan(`[${name}]`)} ${pc.dim(describeTarget(target))}${production}\n`);
             const params = {
               target: name,
               environment: target.environment ?? name,
@@ -211,16 +234,18 @@ export function createProgram(overrides = {}) {
     .option('-s, --site <name>', 'site whose parameters fill the dump command')
     .option('-o, --output <file>', 'where to write the dump')
     .option('-i, --import', 'import the dump locally afterwards (db.importCommand)')
+    .option('-y, --yes', 'confirm a dump from a production target')
     .action(
       async (
         targetName,
-        /** @type {{ site?: string, output?: string, import?: boolean }} */ options,
+        /** @type {{ site?: string, output?: string, import?: boolean, yes?: boolean }} */ options,
       ) => {
         const cfg = await config();
         const target = cfg.targets[targetName];
         if (!target) throw new Error(`Unknown target "${targetName}"`);
         const site = options.site ? cfg.sites[options.site] : {};
         if (!site) throw new Error(`Unknown site "${options.site}"`);
+        confirmProduction({ [targetName]: target }, options.yes);
         const command = renderTemplate(cfg.db.dumpCommand, {
           alias: '@self',
           target: targetName,
@@ -489,10 +514,10 @@ export function createProgram(overrides = {}) {
     .command('capture')
     .description('screenshot every page of a URL set')
     .argument('<set>', 'URL set from visual.urlSets')
-    .option('-l, --label <label>', 'name of this capture (default: environment or "before")')
+    .option('--label <label>', 'name of this capture (default: environment or "before")')
     .option('-e, --env <name>', 'capture one of the environments listed in the URL set')
-    .option('-f, --force', 'replace an existing capture with the same label')
-    .option('-p, --path <path...>', 'extra pages to capture besides the set, e.g. /events')
+    .option('--force', 'replace an existing capture with the same label')
+    .option('--path <path...>', 'extra pages to capture besides the set, e.g. /events')
     .option('--like <label>', 'capture the same pages as an earlier capture of the set')
     .action(
       async (
@@ -588,7 +613,12 @@ export function createProgram(overrides = {}) {
       ) => {
         const { uiTests } = await config();
         for (const name of names) {
-          if (!uiTests.suites[name]) throw new Error(`Unknown suite "${name}"`);
+          const suite = uiTests.suites[name];
+          if (!suite) throw new Error(`Unknown suite "${name}"`);
+          if (options.env && !suite.environments[options.env]) {
+            const known = Object.keys(suite.environments).join(', ') || 'none defined';
+            throw new Error(`Suite "${name}" has no environment "${options.env}" (${known})`);
+          }
         }
         if (!BROWSERS.includes(/** @type {any} */ (options.browser))) {
           throw new Error(`Unknown browser "${options.browser}" (${BROWSERS.join(', ')})`);
@@ -651,19 +681,22 @@ export function createProgram(overrides = {}) {
         ctx.write(`${pc.bold(label)}  ${schedule.cron}  ${pc.dim(`next: ${next}`)}\n`);
       }
       ctx.write(pc.dim('Waiting for schedules, Ctrl+C to stop.\n'));
-      await new Promise((resolve) => process.once('SIGINT', resolve));
+      await new Promise((resolve) => {
+        process.once('SIGINT', resolve);
+        process.once('SIGTERM', resolve);
+      });
       await scheduler.stop();
     });
 
   tests
     .command('history')
     .description('list recent test runs')
-    .option('-s, --suite <name>', 'only runs of this suite')
-    .option('-l, --limit <n>', 'number of runs', '20')
-    .action(async (/** @type {{ suite?: string, limit: string }} */ options) => {
+    .option('--suite <name>', 'only runs of this suite')
+    .option('-l, --limit <n>', 'number of runs (1 to 1000)', parseLimit, 20)
+    .action(async (/** @type {{ suite?: string, limit: number }} */ options) => {
       const { uiTests } = await config();
       const runs = await new TestHistory(uiTests.outputDir).list({
-        limit: Number(options.limit),
+        limit: options.limit,
         ...(options.suite ? { suite: options.suite } : {}),
       });
       if (!runs.length) ctx.write('No test runs yet.\n');
@@ -694,11 +727,11 @@ export function createProgram(overrides = {}) {
   history
     .command('list', { isDefault: true })
     .description('list recent runs')
-    .option('-l, --limit <n>', 'number of runs', '20')
-    .option('-p, --pipeline <name>', 'only runs of this pipeline')
-    .action(async (/** @type {{ limit: string, pipeline?: string }} */ options) => {
+    .option('-l, --limit <n>', 'number of runs (1 to 1000)', parseLimit, 20)
+    .option('--pipeline <name>', 'only runs of this pipeline')
+    .action(async (/** @type {{ limit: number, pipeline?: string }} */ options) => {
       const runs = await ctx.history().list({
-        limit: Number(options.limit),
+        limit: options.limit,
         ...(options.pipeline ? { pipeline: options.pipeline } : {}),
       });
       if (!runs.length) {

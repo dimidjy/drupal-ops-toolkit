@@ -24,7 +24,7 @@ allowed-tools: Read, Bash, Grep, Glob, AskUserQuestion
 2. **Чистота baseline.** Baseline знімається з того самого середовища, що й «after», і до того, як зміни туди потраплять. Якщо зміни тікета вже є в цьому середовищі, скажи, що baseline не чистий, і запропонуй інше середовище. Не роби stash чи checkout сам.
 3. **Наявний baseline.** Якщо `<TICKET>-before` уже є, не перезаписуй: спитай, і лише за згодою додай `--force`.
 4. **Запуск у фоні** (Bash з `run_in_background`), не чекай завершення:
-   `<dops_cli> visual capture <visual_set> -l <TICKET>-before -p <path> -p <path> ...`
+   `<dops_cli> visual capture <visual_set> --label <TICKET>-before --path <path> <path> ...`
 5. Скажи одним рядком: baseline запущено, N сторінок, середовище.
 6. Коли завершиться, одним рядком: скільки сторінок і чи є зламані. Зламані сторінки (`broken` у виводі й у `meta.json` capture) означають, що baseline для них непридатний: назви їх і запропонуй виправити середовище до змін. Блокування переходу поза URL set — проблема налаштування середовища або `allowedOrigins`: повідом окремо.
 

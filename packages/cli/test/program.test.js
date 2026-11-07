@@ -39,6 +39,12 @@ pipelines:
     targets: [web1]
     steps:
       - { name: Cache, run: 'vendor/bin/drush {alias} cr' }
+uiTests:
+  suites:
+    smoke:
+      testDir: tests/smoke
+      baseUrl: 'https://shop.ddev.site'
+      environments: { stage: 'https://stage.example.com' }
 `);
 
 async function run(args, { exitCodes = {} } = {}) {
@@ -63,7 +69,12 @@ async function run(args, { exitCodes = {} } = {}) {
       close: async () => {},
     }),
   });
-  program.exitOverride();
+  /** @param {import('commander').Command} command */
+  const throwInsteadOfExit = (command) => {
+    command.exitOverride().configureOutput({ writeErr: () => {} });
+    command.commands.forEach(throwInsteadOfExit);
+  };
+  throwInsteadOfExit(program);
   await program.parseAsync(['node', 'dops', ...args]);
   return { out, commands, local, history: new RunHistory(dir) };
 }
@@ -166,19 +177,49 @@ describe('dops CLI', () => {
   });
 
   it('needs --yes before touching production targets', async () => {
-    await expect(run(['deploy', 'prod-cache'])).rejects.toThrow(
-      /Production targets: prod1\. Check with --dry-run, then pass --yes/,
+    await expect(run(['run', 'prod-cache'])).rejects.toThrow(
+      /Production targets: prod1\. Check what will run first, then pass --yes/,
     );
     await expect(run(['exec', '-t', 'prod1', '--', 'uptime'])).rejects.toThrow(/prod1/);
-    const dry = await run(['deploy', 'prod-cache', '--dry-run']);
+    const dry = await run(['run', 'prod-cache', '--dry-run']);
     expect(dry.commands).toEqual([]);
     expect(dry.out).toContain('Cache: vendor/bin/drush cr');
-    expect((await run(['deploy', 'prod-cache', '--yes'])).commands).toEqual([
+    expect(dry.out).toContain('(production)');
+    expect((await run(['run', 'prod-cache', '--yes'])).commands).toEqual([
       'prod1: vendor/bin/drush cr',
     ]);
     expect((await run(['exec', '-y', '-t', 'prod1', '--', 'uptime'])).commands).toEqual([
       'prod1: uptime',
     ]);
+  });
+
+  it('needs --yes before pulling a database from production', async () => {
+    const file = join(await mkdtemp(join(tmpdir(), 'dops-db-')), 'prod.sql.gz');
+    await expect(run(['db', 'pull', 'prod1', '-o', file])).rejects.toThrow(/prod1/);
+    expect((await run(['db', 'pull', 'prod1', '-o', file, '--yes'])).commands).toHaveLength(1);
+  });
+
+  it('keeps deploy as another name for run', async () => {
+    expect((await run(['deploy', 'cache-clear'])).commands).toEqual([
+      'web1: vendor/bin/drush cr',
+      'web2: vendor/bin/drush cr',
+    ]);
+  });
+
+  it('marks production targets in the pipeline list', async () => {
+    const { out } = await run(['pipelines']);
+    expect(out).toMatch(/prod-cache .*prod1 .*\(production\)/);
+  });
+
+  it('rejects an unknown test environment before running anything', async () => {
+    await expect(run(['test', 'run', 'smoke', '-e', 'nope'])).rejects.toThrow(
+      /Suite "smoke" has no environment "nope" \(stage\)/,
+    );
+  });
+
+  it('rejects a limit that is not a whole number', async () => {
+    await expect(run(['history', '-l', 'abc'])).rejects.toThrow(/whole number from 1 to 1000/);
+    await expect(run(['test', 'history', '-l', '0'])).rejects.toThrow(/whole number/);
   });
 
   it('rejects unknown pipelines', async () => {
