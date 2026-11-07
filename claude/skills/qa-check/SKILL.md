@@ -23,8 +23,8 @@ allowed-tools: Read, Bash, Grep, Glob, AskUserQuestion
    `<dops_cli> visual capture <visual_set> --label <TICKET>-after --like <TICKET>-before`
    Якщо `<TICKET>-after` уже є, спитай, і лише за згодою додай `--force`. Якщо триває понад хвилину, запусти у фоні й повідом.
 2. **Порівняти:**
-   `<dops_cli> visual compare <visual_set> --before <TICKET>-before --after <TICKET>-after`
-   Код виходу: `0` без змін, `1` є зміни, `2` є зламані сторінки.
+   `<dops_cli> visual compare <visual_set> --before <TICKET>-before --after <TICKET>-after --json`
+   Код виходу: `0` без змін, `1` є зміни, `2` є зламані сторінки. JSON містить `pages` (статус і частку змінених пікселів кожної сторінки), `broken` і шлях до HTML-звіту `report`.
 3. **Зламані сторінки** (код 2, рядки `broken`): сторінка не завантажилась (4xx/5xx, помилка навігації, блокування переходу, сторінка фатальної помилки), навіть якщо так само було й у baseline. Для таких сторінок порівняння не є успіхом: вердикт «зламане середовище», не «чисто».
 4. **Тріаж.** Відкрий HTML-звіт (`report-<before>-<after>.html`) або для найбільших змін (не більше 5) diff-зображення з `diff-<before>-<after>/` і after-скрін (Read). Порівняй із тікетом. Класифікуй:
    - **ОЧІКУВАНА**: збігається з тим, що просить тікет;

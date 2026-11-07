@@ -51,6 +51,8 @@ disable-model-invocation: true
 7. **Залежності** (лише з моєї згоди): `npm install` і `npx playwright install chromium` у toolkit. Потрібен Node із `<toolkit>/.nvmrc`.
 8. **Дозволи** (за бажанням): запропонуй `${CLAUDE_PLUGIN_ROOT}/templates/settings.local.json` для `.claude/settings.local.json`. Якщо файл уже є, покажи різницю, а не замінюй.
 9. **Перевірка.**
+   - `<dops_cli> check`: немає помилок (конфіг, env-файл і його права, SSH-ключі, змінні). Попередження покажи мені.
+   - `<dops_cli> targets`: середовища й production-цілі такі, як я очікую.
    - `git status --short` у проєкті: нових файлів немає.
    - `git -C <toolkit> status --short`: відстежувані файли toolkit не змінились.
    - `<dops_cli> visual capture <visual_set> --label setup-check --force` проходить без зламаних сторінок.

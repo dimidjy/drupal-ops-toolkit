@@ -1,5 +1,6 @@
 export * from './config/schema.js';
 export * from './config/load.js';
+export * from './config/check.js';
 export * from './config/env.js';
 export * from './ssh/executor.js';
 export * from './pipeline/placeholders.js';

@@ -11,7 +11,9 @@ import {
   BROWSERS,
   ProductionConfirmationError,
   assertProductionConfirmed,
+  checkProject,
   describeTarget,
+  isLocalTarget,
   dumpFileName,
   loadConfig,
   missingParams,
@@ -119,11 +121,83 @@ export function createProgram(overrides = {}) {
   const targetLabel = (cfg, name) =>
     cfg.targets[name]?.production ? `${name} ${pc.red('(production)')}` : name;
 
+  /** @param {unknown} data */
+  const writeJson = (data) => ctx.write(`${JSON.stringify(data, null, 2)}\n`);
+
+  program
+    .command('check')
+    .description('check the config, env file, SSH keys and variables without connecting anywhere')
+    .option('--json', 'print the results as JSON')
+    .action(async (/** @type {{ json?: boolean }} */ options) => {
+      const results = await checkProject(program.opts().config);
+      if (options.json) {
+        writeJson(results);
+      } else {
+        const icon = { ok: pc.green('✔'), warn: pc.yellow('!'), error: pc.red('✖') };
+        for (const { level, area, message } of results) {
+          ctx.write(`${icon[level]} ${pc.dim(area.padEnd(7))} ${message}\n`);
+        }
+        const errors = results.filter((result) => result.level === 'error').length;
+        const warnings = results.filter((result) => result.level === 'warn').length;
+        ctx.write(`\n${errors} error(s), ${warnings} warning(s)\n`);
+      }
+      if (results.some((result) => result.level === 'error')) process.exitCode = 1;
+    });
+
+  program
+    .command('targets')
+    .description('list the targets by environment, with production marked')
+    .option('--json', 'print the targets as JSON')
+    .action(async (/** @type {{ json?: boolean }} */ options) => {
+      const cfg = await config();
+      const rows = Object.entries(cfg.targets).map(([name, target]) => ({
+        name,
+        environment: target.environment ?? null,
+        production: target.production,
+        local: isLocalTarget(target),
+        address: describeTarget(target),
+        ...(!isLocalTarget(target) && target.bastion ? { bastion: target.bastion } : {}),
+      }));
+      if (options.json) {
+        writeJson(rows);
+        return;
+      }
+      /** @type {Map<string, typeof rows>} */
+      const byEnvironment = new Map();
+      for (const row of rows) {
+        const key = row.environment ?? '(no environment)';
+        byEnvironment.set(key, [...(byEnvironment.get(key) ?? []), row]);
+      }
+      for (const [environment, items] of byEnvironment) {
+        ctx.write(`${pc.bold(environment)}\n`);
+        for (const row of items) {
+          const via = row.bastion ? pc.dim(` via ${row.bastion}`) : '';
+          const prod = row.production ? ` ${pc.red('(production)')}` : '';
+          ctx.write(`  ${row.name}  ${pc.dim(row.address)}${via}${prod}\n`);
+        }
+      }
+    });
+
   program
     .command('pipelines')
     .description('list the pipelines (runbooks) defined in the configuration')
-    .action(async () => {
+    .option('--json', 'print the pipelines as JSON')
+    .action(async (/** @type {{ json?: boolean }} */ options) => {
       const cfg = await config();
+      if (options.json) {
+        writeJson(
+          Object.entries(cfg.pipelines).map(([name, pipeline]) => ({
+            name,
+            description: pipeline.description ?? null,
+            targets: pipeline.targets.map((target) => ({
+              name: target,
+              production: cfg.targets[target]?.production ?? false,
+            })),
+            steps: pipeline.steps.map((step) => ({ name: step.name, run: step.run })),
+          })),
+        );
+        return;
+      }
       for (const [name, pipeline] of Object.entries(cfg.pipelines)) {
         const targets = pipeline.targets.map((target) => targetLabel(cfg, target)).join(', ');
         ctx.write(`${pc.bold(name)}  ${pc.dim(`${pipeline.steps.length} steps →`)} ${targets}\n`);
@@ -454,13 +528,17 @@ export function createProgram(overrides = {}) {
    * @param {string} before
    * @param {string} after
    * @param {string} title
-   * @returns {Promise<{ changed: number, broken: number }>} pages that differ, and pages
-   *   that did not load correctly in the "after" capture
+   * @param {boolean} [quiet] Print nothing (for --json).
+   * @returns {Promise<{ changed: number, broken: number, report: string,
+   *   results: { name: string, status: string, ratio: number, diffPixels: number, diffFile?: string }[],
+   *   brokenPages: { path: string, broken: string }[] }>}
+   *   pages that differ, and pages that did not load correctly in the "after" capture
    */
-  const compare = async (cfg, setName, before, after, title) => {
+  const compare = async (cfg, setName, before, after, title, quiet = false) => {
     assertSafeLabel(before);
     assertSafeLabel(after);
     urlSetOf(cfg, setName);
+    const write = quiet ? () => {} : ctx.write;
     const dir = join(cfg.visual.outputDir, setName);
     const beforeDir = join(dir, before);
     const afterDir = join(dir, after);
@@ -480,25 +558,25 @@ export function createProgram(overrides = {}) {
       const ratio = result.diffFile
         ? pc.dim(` ${(result.ratio * 100).toFixed(2)}% · ${result.diffPixels} px`)
         : '';
-      ctx.write(`  ${label} ${result.name}${ratio}\n`);
+      write(`  ${label} ${result.name}${ratio}\n`);
     }
     const changed = results.filter((result) => result.status !== 'same').length;
     const report = await writeReport(
       { title, beforeDir, afterDir, beforeLabel: before, afterLabel: after, results },
       join(dir, `report-${pair}.html`),
     );
-    ctx.write(`\n${changed} of ${results.length} pages differ · report: ${report}\n`);
-    const broken = await brokenPagesOf(afterDir);
-    if (broken.length) {
-      ctx.write(
+    write(`\n${changed} of ${results.length} pages differ · report: ${report}\n`);
+    const brokenPages = await brokenPagesOf(afterDir);
+    if (brokenPages.length) {
+      write(
         pc.red(
-          `${broken.length} page(s) did not load correctly in "${after}", so they cannot pass:\n`,
+          `${brokenPages.length} page(s) did not load correctly in "${after}", so they cannot pass:\n`,
         ),
       );
-      for (const page of broken)
-        ctx.write(`  ${pc.red('broken ')} ${page.path} · ${page.broken}\n`);
+      for (const page of brokenPages)
+        write(`  ${pc.red('broken ')} ${page.path} · ${page.broken}\n`);
     }
-    return { changed, broken: broken.length };
+    return { changed, broken: brokenPages.length, report, results, brokenPages };
   };
 
   /**
@@ -539,12 +617,39 @@ export function createProgram(overrides = {}) {
     .argument('<set>', 'URL set from visual.urlSets')
     .option('--before <label>', 'baseline capture', 'before')
     .option('--after <label>', 'capture to check', 'after')
-    .action(async (setName, /** @type {{ before: string, after: string }} */ options) => {
-      const cfg = await config();
-      const title = `Visual diff · ${setName}`;
-      const outcome = await compare(cfg, setName, options.before, options.after, title);
-      if (compareExitCode(outcome)) process.exitCode = compareExitCode(outcome);
-    });
+    .option('--json', 'print the comparison as JSON')
+    .action(
+      async (setName, /** @type {{ before: string, after: string, json?: boolean }} */ options) => {
+        const cfg = await config();
+        const title = `Visual diff · ${setName}`;
+        const outcome = await compare(
+          cfg,
+          setName,
+          options.before,
+          options.after,
+          title,
+          options.json,
+        );
+        if (options.json) {
+          writeJson({
+            set: setName,
+            before: options.before,
+            after: options.after,
+            changed: outcome.changed,
+            report: outcome.report,
+            pages: outcome.results.map(({ name, status, ratio, diffPixels, diffFile }) => ({
+              name,
+              status,
+              ratio,
+              diffPixels,
+              ...(diffFile ? { diffFile } : {}),
+            })),
+            broken: outcome.brokenPages,
+          });
+        }
+        if (compareExitCode(outcome)) process.exitCode = compareExitCode(outcome);
+      },
+    );
 
   visual
     .command('ab')
@@ -693,12 +798,17 @@ export function createProgram(overrides = {}) {
     .description('list recent test runs')
     .option('--suite <name>', 'only runs of this suite')
     .option('-l, --limit <n>', 'number of runs (1 to 1000)', parseLimit, 20)
-    .action(async (/** @type {{ suite?: string, limit: number }} */ options) => {
+    .option('--json', 'print the runs as JSON')
+    .action(async (/** @type {{ suite?: string, limit: number, json?: boolean }} */ options) => {
       const { uiTests } = await config();
       const runs = await new TestHistory(uiTests.outputDir).list({
         limit: options.limit,
         ...(options.suite ? { suite: options.suite } : {}),
       });
+      if (options.json) {
+        writeJson(runs);
+        return;
+      }
       if (!runs.length) ctx.write('No test runs yet.\n');
       for (const run of runs) {
         const status = run.status === 'passed' ? pc.green(run.status) : pc.red(run.status);
@@ -729,11 +839,16 @@ export function createProgram(overrides = {}) {
     .description('list recent runs')
     .option('-l, --limit <n>', 'number of runs (1 to 1000)', parseLimit, 20)
     .option('--pipeline <name>', 'only runs of this pipeline')
-    .action(async (/** @type {{ limit: number, pipeline?: string }} */ options) => {
+    .option('--json', 'print the runs as JSON')
+    .action(async (/** @type {{ limit: number, pipeline?: string, json?: boolean }} */ options) => {
       const runs = await ctx.history().list({
         limit: options.limit,
         ...(options.pipeline ? { pipeline: options.pipeline } : {}),
       });
+      if (options.json) {
+        writeJson(runs);
+        return;
+      }
       if (!runs.length) {
         ctx.write('No runs yet.\n');
         return;

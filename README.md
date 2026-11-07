@@ -117,6 +117,8 @@ npx dops --help
 ## Deploy pipelines
 
 ```bash
+npx dops check                        # config, env file, SSH keys, variables: no connection
+npx dops targets                      # servers by environment, production marked
 npx dops pipelines                    # what can I run?
 npx dops run cache-clear --dry-run    # show the commands per target
 npx dops run deploy                   # run it, with live output
@@ -136,6 +138,9 @@ Targets marked `production: true` (or listed in an environment file with
 dashboard asks for confirmation and marks them, and the API answers 428 unless
 the request carries `confirmProduction: true`. `dops pipelines` and dry runs
 mark them too.
+
+`check`, `targets`, `pipelines`, `history`, `test history` and
+`visual compare` also print JSON with `--json`, for scripts and assistants.
 
 Short options mean the same everywhere: `-t` target, `-s` site, `-p` value
 for a `{placeholder}` (port for `serve`), `-e` environment, `-n` dry run,

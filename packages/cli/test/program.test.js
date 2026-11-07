@@ -1,4 +1,4 @@
-import { mkdtemp, stat } from 'node:fs/promises';
+import { chmod, mkdtemp, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
@@ -220,6 +220,47 @@ describe('dops CLI', () => {
   it('rejects a limit that is not a whole number', async () => {
     await expect(run(['history', '-l', 'abc'])).rejects.toThrow(/whole number from 1 to 1000/);
     await expect(run(['test', 'history', '-l', '0'])).rejects.toThrow(/whole number/);
+  });
+
+  it('lists targets by environment, as text or JSON', async () => {
+    const { out } = await run(['targets']);
+    expect(out).toContain('(no environment)');
+    expect(out).toMatch(/prod1 .*deploy@10\.0\.9\.1:\/var\/www\/site.*\(production\)/);
+    const json = JSON.parse((await run(['targets', '--json'])).out);
+    expect(json.find((target) => target.name === 'prod1')).toMatchObject({
+      production: true,
+      local: false,
+      address: 'deploy@10.0.9.1:/var/www/site',
+    });
+  });
+
+  it('prints pipelines and run history as JSON', async () => {
+    const pipelines = JSON.parse((await run(['pipelines', '--json'])).out);
+    expect(pipelines.find((pipeline) => pipeline.name === 'prod-cache')).toEqual({
+      name: 'prod-cache',
+      description: null,
+      targets: [{ name: 'prod1', production: true }],
+      steps: [{ name: 'Cache', run: 'vendor/bin/drush cr' }],
+    });
+    expect(JSON.parse((await run(['history', '--json'])).out)).toEqual([]);
+  });
+
+  it('checks a project and fails on errors', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'dops-cli-check-'));
+    await writeFile(join(dir, 'dops.config.yml'), 'envFile: project.env\ntargets: {}\n');
+    await writeFile(join(dir, 'project.env'), 'X=1\n');
+    await chmod(join(dir, 'project.env'), 0o600);
+    const ok = await run(['-c', join(dir, 'dops.config.yml'), 'check']);
+    expect(ok.out).toMatch(/0 error\(s\), 0 warning\(s\)/);
+    expect(process.exitCode).toBeUndefined();
+
+    await writeFile(join(dir, 'broken.yml'), 'envFile: nowhere.env\n');
+    const failed = await run(['-c', join(dir, 'broken.yml'), 'check', '--json']);
+    expect(JSON.parse(failed.out)).toEqual([
+      expect.objectContaining({ level: 'error', area: 'env' }),
+      expect.objectContaining({ level: 'error', area: 'config' }),
+    ]);
+    expect(process.exitCode).toBe(1);
   });
 
   it('rejects unknown pipelines', async () => {
