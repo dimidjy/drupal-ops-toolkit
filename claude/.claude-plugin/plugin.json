@@ -1,0 +1,11 @@
+{
+  "name": "dops",
+  "displayName": "Drupal Ops",
+  "version": "0.1.0",
+  "description": "Skills for Drupal tickets: history, Jira, deploy prep, visual QA, test content and reports",
+  "author": { "name": "dimidjy" },
+  "homepage": "https://github.com/dimidjy/drupal-ops-toolkit",
+  "repository": "https://github.com/dimidjy/drupal-ops-toolkit",
+  "license": "MIT",
+  "keywords": ["drupal", "ddev", "deploy", "qa", "jira"]
+}

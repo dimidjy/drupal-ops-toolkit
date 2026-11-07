@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git status:*)",
+      "Bash(git log:*)",
+      "Bash(git show:*)",
+      "Bash(git diff:*)",
+      "Bash(git branch:*)",
+      "Bash(git blame:*)",
+      "Bash(git rev-parse:*)",
+      "Skill(dops:*)"
+    ],
+    "deny": ["Bash(git push:*)", "Bash(git reset --hard:*)", "Bash(git clean:*)"]
+  }
+}

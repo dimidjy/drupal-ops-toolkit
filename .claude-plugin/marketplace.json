@@ -1,0 +1,12 @@
+{
+  "name": "drupal-ops-toolkit",
+  "description": "Claude Code plugin for Drupal project work: ticket analysis, deploy preparation, visual QA and reports",
+  "owner": { "name": "dimidjy" },
+  "plugins": [
+    {
+      "name": "dops",
+      "source": "./claude",
+      "description": "Skills for Drupal tickets: history, Jira, deploy prep, visual QA, test content and reports"
+    }
+  ]
+}

@@ -192,7 +192,7 @@ diff with an HTML report:
 npx dops visual capture staging --label before
 npx dops deploy deploy
 npx dops visual capture staging --label after
-npx dops visual compare staging      # exit code 1 when pages differ
+npx dops visual compare staging      # exit code 1 when pages differ, 2 when pages are broken
 ```
 
 The report (`.dops/visual/<set>/report-before-after.html`) shows changed pages
@@ -200,6 +200,17 @@ first with before, after and diff images side by side. Dynamic elements such
 as status messages or sliders can be hidden with `visual.hide` selectors.
 Environments behind basic auth read their credentials from the env variables
 named in `httpAuth`.
+
+A capture only goes where the URL set points. Every redirect hop is checked
+before the browser requests it, and a hop to another origin is blocked (list
+extra ones in `allowedOrigins`), so a misconfigured environment cannot send the
+capture or its credentials to another site. Pages that answer 4xx/5xx, get
+blocked or show a Drupal or PHP error page are marked broken, and `compare`
+fails for them even when the baseline was just as broken. A label is never
+overwritten without `--force`, and the old capture is only replaced once the
+new one has finished. `visual.cacheBust: true` adds a unique query parameter
+so Varnish or a CDN serves fresh pages. `--path /events` adds pages for one
+run, and `--like before` captures exactly the pages of an earlier capture.
 
 The dashboard's Visual tab does the same without any config: paste a list of
 URLs, pick a viewport and settle delay, optionally add basic auth or cookies
@@ -295,6 +306,22 @@ analysis (acceptance criteria, risks, questions, steps); the Board tab runs
 the reports.
 
 See [python/ai-review/README.md](python/ai-review/README.md).
+
+## Claude Code plugin
+
+`claude/` is a Claude Code plugin (`dops`), and the repository is its
+marketplace. Its skills cover the ticket workflow around the tools above:
+ticket history and Jira, deploy branch preparation, visual QA with
+`dops visual`, test content on non-production environments, and chat-ready
+reports. Project values live in a profile file inside the project, never in
+this repository.
+
+```bash
+claude plugin marketplace add ./drupal-ops-toolkit
+claude plugin install dops@drupal-ops-toolkit --scope local
+```
+
+See [claude/README.md](claude/README.md).
 
 ## Development
 
