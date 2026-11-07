@@ -38,7 +38,7 @@ Then, in Claude Code, run `/dops:setup`. It creates, all outside git:
 
 - `.claude/dops/project.md`: the project profile (tracker, branches, deploy commands, local sites)
 - `CLAUDE.local.md`: imports [rules.md](rules.md) and the profile into every session
-- `~/.config/dops/<project>.env`: secrets, read by the skills, never printed
+- `~/.config/dops/<project>.env`: the project's secrets, the one file read by the skills, the CLI and the dashboard (`envFile` in `dops.config.yml`), never printed
 - `drupal-ops-toolkit/dops.config.yml`: the URL set used by the visual skills
 
 and adds `drupal-ops-toolkit/`, `.claude/` and `CLAUDE.local.md` to

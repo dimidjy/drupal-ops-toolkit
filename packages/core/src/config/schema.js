@@ -162,6 +162,8 @@ export const paramSchema = z.object({
 
 export const configSchema = z
   .object({
+    /** File with the project's secrets (KEY=value), read before `${VAR}` is resolved. */
+    envFile: z.string().optional(),
     bastions: z.record(name, bastion).default({}),
     targets: z.record(name, target).default({}),
     sites: z.record(name, site).default({}),

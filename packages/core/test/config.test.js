@@ -4,6 +4,59 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { ConfigError, loadConfig, parseConfig } from '../src/config/load.js';
 
+describe('loadConfig with the project env file', () => {
+  const config = `
+envFile: secrets/project.env
+targets:
+  stage:
+    host: \${STAGE_HOST}
+    user: \${STAGE_USER}
+    agent: true
+`;
+
+  /** @param {Record<string, string>} files */
+  const write = async (files) => {
+    const dir = await mkdtemp(join(tmpdir(), 'dops-envfile-'));
+    for (const [path, text] of Object.entries(files)) {
+      await mkdir(join(dir, path, '..'), { recursive: true });
+      await writeFile(join(dir, path), text);
+    }
+    return dir;
+  };
+
+  it('reads envFile before resolving ${VAR}, and the shell wins', async () => {
+    const dir = await write({
+      'dops.config.yml': config,
+      'secrets/project.env': 'STAGE_HOST=10.0.1.10\nSTAGE_USER=from-file\n',
+    });
+    /** @type {NodeJS.ProcessEnv} */
+    const env = { STAGE_USER: 'from-shell' };
+    const loaded = await loadConfig(join(dir, 'dops.config.yml'), env);
+    expect(loaded.targets.stage).toMatchObject({ host: '10.0.1.10', user: 'from-shell' });
+    expect(env.STAGE_HOST).toBe('10.0.1.10');
+  });
+
+  it('prefers DOPS_ENV_FILE, then envFile, then .env next to the config', async () => {
+    const dir = await write({
+      'dops.config.yml': config,
+      'secrets/project.env': 'STAGE_HOST=from-envfile\n',
+      '.env': 'STAGE_HOST=from-dotenv\nSTAGE_USER=from-dotenv\n',
+      'override.env': 'STAGE_HOST=from-override\n',
+    });
+    const loaded = await loadConfig(join(dir, 'dops.config.yml'), {
+      DOPS_ENV_FILE: join(dir, 'override.env'),
+    });
+    expect(loaded.targets.stage).toMatchObject({ host: 'from-override', user: 'from-dotenv' });
+  });
+
+  it('fails clearly when envFile points nowhere', async () => {
+    const dir = await write({ 'dops.config.yml': config });
+    await expect(loadConfig(join(dir, 'dops.config.yml'), {})).rejects.toThrowError(
+      /envFile not found: .*secrets\/project\.env/,
+    );
+  });
+});
+
 /**
  * Writes a project folder: the main config plus files under it.
  *

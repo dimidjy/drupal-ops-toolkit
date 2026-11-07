@@ -1,8 +1,10 @@
+import { existsSync } from 'node:fs';
 import { readFile, readdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { basename, dirname, extname, join } from 'node:path';
+import { basename, dirname, extname, join, resolve } from 'node:path';
 import { parse } from 'yaml';
 import { ZodError } from 'zod';
+import { loadEnvFile } from './env.js';
 import { configSchema } from './schema.js';
 
 export const DEFAULT_CONFIG_FILE = 'dops.config.yml';
@@ -216,5 +218,41 @@ export async function loadConfig(file = DEFAULT_CONFIG_FILE, env = process.env) 
   }
   const raw = parse(source) ?? {};
   if (!isRecord(raw)) throw new ConfigError(`${file} must contain a YAML mapping`);
+  await loadProjectEnv(raw, dirname(file), env);
   return validateConfig(await mergeConfigDirs(raw, dirname(file)), env);
+}
+
+/**
+ * Loads the project's secrets before `${VAR}` is resolved, so the CLI, the
+ * dashboard (and the dops-ai processes it starts) and the Claude Code skills all
+ * read the same file. Variables already set always win, then in order:
+ * `DOPS_ENV_FILE`, the config's `envFile` (relative to the config file, `~`
+ * allowed) and a `.env` next to the config file.
+ *
+ * @param {Record<string, any>} raw
+ * @param {string} baseDir
+ * @param {NodeJS.ProcessEnv} env
+ * @returns {Promise<string[]>} the files that were read
+ */
+export async function loadProjectEnv(raw, baseDir, env) {
+  /** @type {string[]} */
+  const files = [];
+  if (env.DOPS_ENV_FILE) files.push(resolve(expandHome(env.DOPS_ENV_FILE)));
+  if (raw.envFile !== undefined) {
+    if (typeof raw.envFile !== 'string' || !raw.envFile.trim()) {
+      throw new ConfigError('envFile must be a path');
+    }
+    const envFile = resolve(baseDir, expandHome(raw.envFile));
+    if (!existsSync(envFile)) throw new ConfigError(`envFile not found: ${envFile}`);
+    files.push(envFile);
+  }
+  files.push(resolve(baseDir, '.env'));
+  /** @type {string[]} */
+  const read = [];
+  for (const envFile of [...new Set(files)]) {
+    if (!existsSync(envFile)) continue;
+    await loadEnvFile(envFile, env);
+    read.push(envFile);
+  }
+  return read;
 }

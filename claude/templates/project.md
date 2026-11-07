@@ -8,7 +8,7 @@ This file lives in the project (`.claude/dops/project.md`), never in the toolkit
 project_name:
 toolkit_dir: drupal-ops-toolkit
 dops_cli: cd drupal-ops-toolkit && npx dops
-credentials_file: ~/.config/dops/<project>.env
+env_file: ~/.config/dops/<project>.env
 output_language: en
 
 ## Tracker

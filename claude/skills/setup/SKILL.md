@@ -35,9 +35,10 @@ disable-model-invocation: true
    Решту (`tracker_url`, `ticket_key_pattern`, `report_greeting`, `report_dir`, середовища) спитай через AskUserQuestion. Покажи таблицю: ключ, значення, звідки взято, впевненість.
 
 4. **Правила.** Створи `CLAUDE.local.md` у корені проєкту з `${CLAUDE_PLUGIN_ROOT}/templates/CLAUDE.local.md`. Якщо файл уже є, лише додай два рядки `@...`, яких бракує.
-5. **Секрети.** Якщо `credentials_file` не існує, створи його з `${CLAUDE_PLUGIN_ROOT}/templates/credentials.env.example` з правами `600`. Скажи, які ключі заповнити.
-6. **Конфіг toolkit.** Якщо `<toolkit>/dops.config.yml` немає, створи його з `<toolkit>/examples/dops.config.example.yml`. Залиш лише те, що стосується проєкту, і додай URL set для `visual_set`:
+5. **Секрети.** Один файл на проєкт для всього: CLI, dashboard, `dops-ai` і skills. Якщо `env_file` не існує, створи його з `${CLAUDE_PLUGIN_ROOT}/templates/project.env.example` з правами `600`. Скажи, які ключі заповнити.
+6. **Конфіг toolkit.** Якщо `<toolkit>/dops.config.yml` немає, створи його з `<toolkit>/examples/dops.config.example.yml`. Залиш лише те, що стосується проєкту, першим рядком вкажи `envFile: <env_file>` і додай URL set для `visual_set`:
    ```yaml
+   envFile: ~/.config/dops/<project>.env
    visual:
      cacheBust: true
      hide: ['.messages']

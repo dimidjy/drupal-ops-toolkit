@@ -2,6 +2,9 @@
 # No secrets here: SSH uses your key file or agent, and values like hosts can
 # come from the environment with ${VAR}.
 
+# The project's secrets file, read before ${VAR} is resolved (see .env.example).
+# envFile: ~/.config/dops/shop.env
+
 bastions:
   jump:
     host: ${DOPS_BASTION_HOST}
@@ -120,8 +123,8 @@ visual:
         prod: https://www.example.com
         stage: https://staging.example.com
       httpAuth:
-        usernameEnv: STAGING_HTTP_USER
-        passwordEnv: STAGING_HTTP_PASS
+        usernameEnv: TEST_HTTP_USER
+        passwordEnv: TEST_HTTP_PASS
 
 uiTests:
   outputDir: .dops/ui-tests

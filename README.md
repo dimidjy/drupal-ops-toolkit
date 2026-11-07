@@ -301,8 +301,16 @@ recoveries) are posted to a Slack-compatible webhook.
 Everything lives in `dops.config.yml` (see
 [examples/dops.config.example.yml](examples/dops.config.example.yml)). Secrets
 never go in that file: SSH uses keys or the agent, and passwords, tokens and
-webhook URLs are read from environment variables, optionally from a `.env`
-file (see [.env.example](.env.example); shell variables win).
+webhook URLs are read from environment variables.
+
+Each project keeps them in one env file outside any repository, named by
+`envFile` in the config (for example `~/.config/dops/shop.env`, see
+[.env.example](.env.example)). Every command reads it before resolving
+`${VAR}`, the dashboard passes it on to the `dops-ai` processes it starts, and
+the Claude Code plugin points at the same file. Shell variables win, then
+`DOPS_ENV_FILE`, then `envFile`, then a `.env` next to the config. Run
+standalone, `dops-ai` only sees the shell, so load the file there first
+(`set -a; . ~/.config/dops/shop.env; set +a`).
 
 ## AI review
 
