@@ -139,7 +139,6 @@ export function Pipelines({ api, onStarted }) {
 
   return (
     <section>
-      <h2>Pipelines</h2>
       {error && <p className="error">{error}</p>}
       <QuickCommand
         api={api}

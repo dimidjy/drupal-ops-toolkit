@@ -61,9 +61,9 @@ export function ReviewResult({ record }) {
  * AI review of a recent commit (checked against its Jira tickets) or of the
  * uncommitted changes, plus the reviews done before.
  *
- * @param {{ api: Api }} props
+ * @param {{ api: Api, view?: 'review' | 'history' }} props
  */
-export function Review({ api }) {
+export function Review({ api, view = 'review' }) {
   const [commits, setCommits] = useState(/** @type {Awaited<ReturnType<Api['commits']>>} */ ([]));
   const [history, setHistory] = useState(/** @type {Awaited<ReturnType<Api['reviews']>>} */ ([]));
   const [selected, setSelected] = useState('');
@@ -99,51 +99,53 @@ export function Review({ api }) {
 
   return (
     <section>
-      <h2>Commit review</h2>
-      <div className="card">
-        <strong>Recent commits</strong>
-        <ul className="commit-list">
-          {commits.map((commit) => (
-            <li key={commit.sha}>
-              <label>
-                <input
-                  type="radio"
-                  name="commit"
-                  checked={selected === commit.sha}
-                  onChange={() => setSelected(commit.sha)}
-                />{' '}
-                <code>{commit.sha.slice(0, 8)}</code> {commit.subject}
-                <span className="muted small">
-                  {' '}
-                  · {commit.author} · {new Date(commit.date).toLocaleDateString()}
-                </span>
-              </label>
-            </li>
-          ))}
-        </ul>
-        <div className="row">
-          <select value={provider} onChange={(e) => setProvider(e.target.value)}>
-            <option value="openai">OpenAI</option>
-            <option value="anthropic">Claude</option>
-          </select>
-          <button disabled={busy || !selected} onClick={() => run(selected)}>
-            {busy ? 'Reviewing…' : 'Review commit'}
-          </button>
-          <button className="secondary" disabled={busy} onClick={() => run()}>
-            Review uncommitted changes
-          </button>
-          <span className="muted small">
-            Jira issues named in the commit message are loaded and checked too.
-          </span>
+      {view === 'review' && (
+        <div className="card">
+          <strong>Recent commits</strong>
+          <ul className="commit-list">
+            {commits.map((commit) => (
+              <li key={commit.sha}>
+                <label>
+                  <input
+                    type="radio"
+                    name="commit"
+                    checked={selected === commit.sha}
+                    onChange={() => setSelected(commit.sha)}
+                  />{' '}
+                  <code>{commit.sha.slice(0, 8)}</code> {commit.subject}
+                  <span className="muted small">
+                    {' '}
+                    · {commit.author} · {new Date(commit.date).toLocaleDateString()}
+                  </span>
+                </label>
+              </li>
+            ))}
+          </ul>
+          <div className="row">
+            <select value={provider} onChange={(e) => setProvider(e.target.value)}>
+              <option value="openai">OpenAI</option>
+              <option value="anthropic">Claude</option>
+            </select>
+            <button disabled={busy || !selected} onClick={() => run(selected)}>
+              {busy ? 'Reviewing…' : 'Review commit'}
+            </button>
+            <button className="secondary" disabled={busy} onClick={() => run()}>
+              Review uncommitted changes
+            </button>
+            <span className="muted small">
+              Jira issues named in the commit message are loaded and checked too.
+            </span>
+          </div>
+          {error && <p className="error">{error}</p>}
         </div>
-        {error && <p className="error">{error}</p>}
-      </div>
+      )}
+      {view === 'history' && error && <p className="error">{error}</p>}
 
       {record && <ReviewResult record={record} />}
 
-      {history.length > 0 && (
+      {view === 'history' && !history.length && !error && <p className="muted">No reviews yet.</p>}
+      {view === 'history' && history.length > 0 && (
         <>
-          <h3>Recent reviews</h3>
           <table className="history">
             <thead>
               <tr>

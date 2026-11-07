@@ -36,9 +36,9 @@ function describeRun(what) {
  * UI tests: run a suite or one spec file against an environment, with a URL
  * list and a browser, follow it, open its report, and schedule it.
  *
- * @param {{ api: Api }} props
+ * @param {{ api: Api, view?: 'run' | 'schedules' | 'history' }} props
  */
-export function Tests({ api }) {
+export function Tests({ api, view = 'run' }) {
   const [suites, setSuites] = useState(/** @type {TestSuiteInfo[]} */ ([]));
   const [runs, setRuns] = useState(/** @type {TestRunInfo[]} */ ([]));
   const [schedules, setSchedules] = useState(/** @type {ScheduleInfo[]} */ ([]));
@@ -105,13 +105,13 @@ export function Tests({ api }) {
 
   return (
     <section>
-      <h2>UI tests</h2>
       {!suites.length && !error && (
         <p className="muted">
           No suites configured. Add <code>uiTests.suites</code> to the config.
         </p>
       )}
-      {suite && (
+      {view !== 'run' && error && <p className="error">{error}</p>}
+      {view === 'run' && suite && (
         <div className="card">
           <strong>Run a test</strong>
           <div className="row">
@@ -195,9 +195,9 @@ export function Tests({ api }) {
         </div>
       )}
 
-      {runs.length > 0 && (
+      {view === 'history' && !runs.length && !error && <p className="muted">No test runs yet.</p>}
+      {view === 'history' && runs.length > 0 && (
         <>
-          <h3>Recent runs</h3>
           <table className="history">
             <thead>
               <tr>
@@ -246,12 +246,14 @@ export function Tests({ api }) {
         </>
       )}
 
-      {suite && (
+      {view === 'schedules' && suite && (
         <>
-          <h3>Schedules</h3>
           <div className="card">
             <strong>Schedule this run</strong>
-            <span className="muted small">{describeRun({ suite: suite.name, ...options() })}</span>
+            <span className="muted small">
+              {describeRun({ suite: suite.name, ...options() })} · set the suite, test, environment
+              and browser in the Run tab
+            </span>
             <div className="row">
               <label className="field">
                 <span>Name</span>

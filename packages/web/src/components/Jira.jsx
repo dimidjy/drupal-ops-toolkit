@@ -42,7 +42,6 @@ export function Jira({ api }) {
   const issue = details?.issue;
   return (
     <section>
-      <h2>Jira</h2>
       <form className="card" onSubmit={load}>
         <div className="row">
           <label className="field">

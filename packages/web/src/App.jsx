@@ -1,22 +1,16 @@
 import { useState } from 'react';
-import { Board } from './components/Board.jsx';
-import { History } from './components/History.jsx';
-import { Jira } from './components/Jira.jsx';
-import { Pipelines } from './components/Pipelines.jsx';
-import { Review } from './components/Review.jsx';
 import { RunView } from './components/RunView.jsx';
-import { Tests } from './components/Tests.jsx';
+import {
+  DeploySection,
+  JiraSection,
+  ReviewSection,
+  TestsSection,
+  VisualSection,
+} from './components/Sections.jsx';
 import { TokenGate } from './components/TokenGate.jsx';
-import { VisualSection } from './components/VisualSection.jsx';
 
 const GROUPS = /** @type {const} */ ([
-  [
-    'Deploy',
-    [
-      ['deploy', 'Pipelines'],
-      ['runs', 'Runs'],
-    ],
-  ],
+  ['Deploy', [['deploy', 'Deploy']]],
   [
     'QA',
     [
@@ -29,7 +23,6 @@ const GROUPS = /** @type {const} */ ([
     [
       ['review', 'Review'],
       ['jira', 'Jira'],
-      ['board', 'Board'],
     ],
   ],
 ]);
@@ -45,13 +38,11 @@ function Dashboard({ api, logout }) {
 
   /** @type {Record<Section, () => import('react').ReactNode>} */
   const views = {
-    deploy: () => <Pipelines api={api} onStarted={setRunId} />,
-    runs: () => <History api={api} onOpen={setRunId} />,
-    tests: () => <Tests api={api} />,
+    deploy: () => <DeploySection api={api} onOpenRun={setRunId} />,
+    tests: () => <TestsSection api={api} />,
     visual: () => <VisualSection api={api} />,
-    review: () => <Review api={api} />,
-    jira: () => <Jira api={api} />,
-    board: () => <Board api={api} />,
+    review: () => <ReviewSection api={api} />,
+    jira: () => <JiraSection api={api} />,
   };
 
   return (
@@ -61,7 +52,7 @@ function Dashboard({ api, logout }) {
         <nav>
           {GROUPS.map(([group, items]) => (
             <div key={group} className="nav-items">
-              <span className="nav-group">{group}</span>
+              {items.length > 1 && <span className="nav-group">{group}</span>}
               {items.map(([key, label]) => (
                 <button
                   key={key}

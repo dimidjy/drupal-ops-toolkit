@@ -197,9 +197,10 @@ any one-off command (`drush status`, `tail -n 50 …/php-error.log`) on the
 ticked servers. Local targets are left to the CLI. It only listens on
 localhost and every API call needs a token (`DOPS_TOKEN`, or the one printed
 on start). Exposing it on another interface requires `DOPS_ALLOW_REMOTE=1`.
-The sidebar groups everything: Deploy (pipelines, runs), QA (UI tests and
-Visual, with a switch between before/after, A vs B and CLI reports) and
-AI & Jira (review, Jira, board).
+Every section has the same shape, a title and a switch between its tabs:
+Deploy (Pipelines, History), UI tests (Run, Schedules, History), Visual
+(Before / after, A vs B, Reports), Review (Review, History) and Jira (Issue,
+Board, Board history).
 Pipelines and parameters are edited as files, not in the dashboard.
 
 | Pipelines and quick command               | Visual testing                                 |

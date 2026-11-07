@@ -102,9 +102,9 @@ function BoardReport({ report }) {
  * Board overview for a JQL query with an optional AI stand-up summary;
  * every run is kept as a report.
  *
- * @param {{ api: Api }} props
+ * @param {{ api: Api, view?: 'board' | 'history' }} props
  */
-export function Board({ api }) {
+export function Board({ api, view = 'board' }) {
   const [jql, setJql] = useState(() => {
     try {
       return localStorage.getItem(JQL_KEY) ?? '';
@@ -154,59 +154,63 @@ export function Board({ api }) {
 
   return (
     <section>
-      <h2>Board</h2>
-      <div className="card">
-        <label className="field">
-          <span>JQL (empty: DOPS_JIRA_JQL)</span>
-          <textarea
-            rows={2}
-            value={jql}
-            onChange={(e) => setJql(e.target.value)}
-            placeholder="project = SHOP AND sprint in openSprints() ORDER BY status"
-            spellCheck={false}
-          />
-        </label>
-        <div className="row">
+      {view === 'board' && (
+        <div className="card">
           <label className="field">
-            <span>Max issues</span>
-            <input
-              type="number"
-              className="narrow"
-              min={1}
-              max={500}
-              value={limit}
-              onChange={(e) => setLimit(Number(e.target.value))}
+            <span>JQL (empty: DOPS_JIRA_JQL)</span>
+            <textarea
+              rows={2}
+              value={jql}
+              onChange={(e) => setJql(e.target.value)}
+              placeholder="project = SHOP AND sprint in openSprints() ORDER BY status"
+              spellCheck={false}
             />
           </label>
-          <label>
-            <input
-              type="checkbox"
-              checked={summarize}
-              onChange={(e) => setSummarize(e.target.checked)}
-            />{' '}
-            AI summary
-          </label>
-          {summarize && (
-            <select value={provider} onChange={(e) => setProvider(e.target.value)}>
-              <option value="openai">OpenAI</option>
-              <option value="anthropic">Claude</option>
-            </select>
-          )}
-          <button disabled={busy} onClick={run}>
-            {busy ? 'Loading…' : 'Run'}
-          </button>
+          <div className="row">
+            <label className="field">
+              <span>Max issues</span>
+              <input
+                type="number"
+                className="narrow"
+                min={1}
+                max={500}
+                value={limit}
+                onChange={(e) => setLimit(Number(e.target.value))}
+              />
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={summarize}
+                onChange={(e) => setSummarize(e.target.checked)}
+              />{' '}
+              AI summary
+            </label>
+            {summarize && (
+              <select value={provider} onChange={(e) => setProvider(e.target.value)}>
+                <option value="openai">OpenAI</option>
+                <option value="anthropic">Claude</option>
+              </select>
+            )}
+            <button disabled={busy} onClick={run}>
+              {busy ? 'Loading…' : 'Run'}
+            </button>
+          </div>
+          {error && <p className="error">{error}</p>}
         </div>
-        {error && <p className="error">{error}</p>}
-      </div>
+      )}
+      {view === 'history' && error && <p className="error">{error}</p>}
 
       {report && <BoardReport report={report} />}
 
-      {reports.length > 0 && (
+      {view === 'history' && !reports.length && !error && (
+        <p className="muted">No board reports yet.</p>
+      )}
+      {view === 'history' && reports.length > 0 && (
         <>
           <div className="row">
-            <h3>Recent reports</h3>
             <button className="link danger-text" onClick={clear}>
-              Clear
+              Clear all reports
             </button>
           </div>
           <table className="history">

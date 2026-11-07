@@ -33,7 +33,6 @@ export function History({ api, onOpen }) {
 
   return (
     <section>
-      <h2>History</h2>
       {error && <p className="error">{error}</p>}
       {!runs.length && !error && <p className="muted">No runs yet.</p>}
       <table className="history">
