@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import WebSocket from 'ws';
-import { RunHistory, Workspace, parseConfig } from '@dops/core';
+import { RunHistory, parseConfig } from '@dops/core';
 import { buildServer } from '../src/app.js';
 import { startServer } from '../src/start.js';
 
@@ -112,7 +112,7 @@ describe('dashboard API', () => {
     const pipelines = (await app.inject({ url: '/api/pipelines', headers: auth })).json();
     expect(pipelines[0]).toMatchObject({ name: 'cache-clear', targets: ['web1', 'web2'] });
     const targets = (await app.inject({ url: '/api/targets', headers: auth })).json();
-    expect(Object.keys(targets[0]).sort()).toEqual(['environment', 'host', 'name']);
+    expect(Object.keys(targets[0]).sort()).toEqual(['environment', 'host', 'name', 'production']);
   });
 
   it('starts a run, records it and serves the log', async () => {
@@ -280,7 +280,6 @@ describe('dashboard API', () => {
       name: 'branch',
       description: 'Branch',
       default: 'main',
-      source: 'config',
     });
 
     const start = (payload) =>
@@ -297,35 +296,53 @@ describe('dashboard API', () => {
     expect(commands).toEqual(['web1: git checkout main && drush en admin_toolbar']);
   });
 
-  it('creates, edits and deletes dashboard pipelines and parameters', async () => {
-    const ownConfig = structuredClone(config);
-    const file = join(await mkdtemp(join(tmpdir(), 'dops-ws-')), 'workspace.json');
+  it('refuses production targets unless the run is confirmed', async () => {
+    const prodConfig = parseConfig(`
+targets:
+  stage: { host: 10.0.1.1, user: deploy, agent: true }
+  prod1: { host: 10.0.2.1, user: deploy, agent: true, production: true }
+pipelines:
+  status:
+    targets: [stage, prod1]
+    steps:
+      - { name: Status, run: drush status }
+`);
+    const executed = [];
     const app = buildServer({
-      config: ownConfig,
+      config: prodConfig,
       history: new RunHistory(await mkdtemp(join(tmpdir(), 'dops-server-'))),
       token: TOKEN,
-      connect: async () => ({ exec: async () => ({ code: 0 }), close: async () => {} }),
-      workspace: await Workspace.open(file, ownConfig),
+      connect: async (name) => ({
+        exec: async (command) => {
+          executed.push(`${name}: ${command}`);
+          return { code: 0 };
+        },
+        close: async () => {},
+      }),
     });
-    const put = (url, payload) => app.inject({ method: 'PUT', url, headers: auth, payload });
+    const post = (url, payload) => app.inject({ method: 'POST', url, headers: auth, payload });
 
-    const saved = await put('/api/pipelines/status', {
-      description: 'Drush status',
-      targets: ['web1'],
-      steps: [{ name: 'Status', run: 'drush {alias} status' }],
-    });
-    expect(saved.statusCode).toBe(200);
-    const listed = (await app.inject({ url: '/api/pipelines', headers: auth })).json();
-    expect(listed.find((p) => p.name === 'status')).toMatchObject({
-      source: 'dashboard',
-      params: ['alias'],
-    });
-    expect((await put('/api/pipelines/cache-clear', saved.json())).statusCode).toBe(400);
-    expect((await put('/api/params/ticket', { description: 'Jira key' })).statusCode).toBe(200);
+    const targets = (await app.inject({ url: '/api/targets', headers: auth })).json();
+    expect(targets.find((t) => t.name === 'prod1')).toMatchObject({ production: true });
+    expect(targets.find((t) => t.name === 'stage')).toMatchObject({ production: false });
 
-    const del = (url) => app.inject({ method: 'DELETE', url, headers: auth });
-    expect((await del('/api/pipelines/status')).statusCode).toBe(204);
-    expect((await del('/api/params/branch')).statusCode).toBe(400);
+    const refused = await post('/api/runs', { pipeline: 'status' });
+    expect(refused.statusCode).toBe(428);
+    expect(refused.json().production).toEqual(['prod1']);
+    const command = await post('/api/commands', { command: 'uptime', targets: ['prod1'] });
+    expect(command.statusCode).toBe(428);
+    expect(executed).toEqual([]);
+
+    expect((await post('/api/runs', { pipeline: 'status', targets: ['stage'] })).statusCode).toBe(
+      202,
+    );
+    await waitFor(() => executed.length === 1);
+    expect(
+      (await post('/api/runs', { pipeline: 'status', targets: ['prod1'], confirmProduction: true }))
+        .statusCode,
+    ).toBe(202);
+    await waitFor(() => executed.length === 2);
+    expect(executed).toEqual(['stage: drush status', 'prod1: drush status']);
   });
 
   it('sets a session cookie that also unlocks screenshot files', async () => {

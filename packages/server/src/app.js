@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 import fastifyStatic from '@fastify/static';
 import websocket from '@fastify/websocket';
 import Fastify from 'fastify';
-import { BROWSERS, Workspace, isLocalTarget, pipelineParams } from '@dops/core';
+import { BROWSERS, ProductionConfirmationError, isLocalTarget, pipelineParams } from '@dops/core';
 import { listTestFiles } from '@dops/ui-tests';
 import { MissingParamsError, RunConflictError, RunManager } from './runs.js';
 import { AiService } from './ai.js';
@@ -25,7 +25,6 @@ import { PairJobs, VisualJobs } from './visual.js';
  * @property {string} token Bearer token required on every /api request.
  * @property {boolean | object} [logger]
  * @property {string} [staticDir] Built dashboard to serve on /, if present.
- * @property {Workspace} [workspace] Dashboard-made pipelines and parameters.
  * @property {AiService} [ai] Commit reviews through dops-ai; injectable for tests.
  * @property {import('@dops/ui-tests').runSuite} [runSuite] Injectable for tests.
  */
@@ -74,7 +73,6 @@ export function buildServer({
   token,
   logger = false,
   staticDir,
-  workspace = new Workspace(config.dashboard.workspaceFile, config),
   ai = new AiService(config),
   runSuite,
 }) {
@@ -112,6 +110,9 @@ export function buildServer({
     }
     if (error instanceof MissingParamsError) {
       return reply.code(400).send({ error: error.message, missing: error.missing });
+    }
+    if (error instanceof ProductionConfirmationError) {
+      return reply.code(428).send({ error: error.message, production: error.targets });
     }
     const status = error.statusCode ?? (/^Unknown /.test(error.message) ? 404 : 500);
     return reply.code(status).send({ error: error.message });
@@ -167,39 +168,14 @@ export function buildServer({
       targets: pipeline.targets,
       steps: pipeline.steps,
       params: pipelineParams(pipeline),
-      source: workspace.ownsPipeline(name) ? 'dashboard' : 'config',
     })),
   );
-
-  app.put('/api/pipelines/:name', async (request) => {
-    const { name } = /** @type {{ name: string }} */ (request.params);
-    const pipeline = await workspace.savePipeline(name, request.body);
-    return { name, ...pipeline };
-  });
-
-  app.delete('/api/pipelines/:name', async (request, reply) => {
-    const { name } = /** @type {{ name: string }} */ (request.params);
-    await workspace.deletePipeline(name);
-    return reply.code(204).send();
-  });
-
-  app.put('/api/params/:name', async (request) => {
-    const { name } = /** @type {{ name: string }} */ (request.params);
-    return { name, ...(await workspace.saveParam(name, request.body)) };
-  });
-
-  app.delete('/api/params/:name', async (request, reply) => {
-    const { name } = /** @type {{ name: string }} */ (request.params);
-    await workspace.deleteParam(name);
-    return reply.code(204).send();
-  });
 
   app.get('/api/params', async () =>
     Object.entries(config.params).map(([name, param]) => ({
       name,
       description: param.description ?? null,
       default: param.default ?? null,
-      source: workspace.ownsParam(name) ? 'dashboard' : 'config',
     })),
   );
 
@@ -215,6 +191,7 @@ export function buildServer({
       name,
       environment: target.environment ?? null,
       host: isLocalTarget(target) ? 'local' : target.host,
+      production: target.production,
     })),
   );
 
@@ -233,13 +210,14 @@ export function buildServer({
             targets: { type: 'array', items: { type: 'string' } },
             site: { type: 'string' },
             params: { type: 'object', additionalProperties: { type: 'string' } },
+            confirmProduction: { type: 'boolean' },
           },
         },
       },
     },
     async (request, reply) => {
       const body =
-        /** @type {{ pipeline: string, targets?: string[], site?: string, params?: Record<string, string> }} */ (
+        /** @type {{ pipeline: string, targets?: string[], site?: string, params?: Record<string, string>, confirmProduction?: boolean }} */ (
           request.body
         );
       const { id } = await runs.start(body);
@@ -260,6 +238,7 @@ export function buildServer({
             targets: { type: 'array', items: { type: 'string' }, minItems: 1 },
             site: { type: 'string' },
             params: { type: 'object', additionalProperties: { type: 'string' } },
+            confirmProduction: { type: 'boolean' },
           },
         },
       },
@@ -269,7 +248,7 @@ export function buildServer({
         return reply.code(403).send({ error: 'Commands are disabled (dashboard.allowCommands)' });
       }
       const body =
-        /** @type {{ command: string, targets: string[], site?: string, params?: Record<string, string> }} */ (
+        /** @type {{ command: string, targets: string[], site?: string, params?: Record<string, string>, confirmProduction?: boolean }} */ (
           request.body
         );
       const { id } = await runs.command(body);

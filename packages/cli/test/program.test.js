@@ -16,7 +16,12 @@ sites:
 targets:
   web1: { host: 10.0.0.1, user: deploy, agent: true, path: /var/www/site }
   web2: { host: 10.0.0.2, user: deploy, agent: true, path: /var/www/site }
+  prod1: { host: 10.0.9.1, user: deploy, agent: true, path: /var/www/site, production: true }
 pipelines:
+  prod-cache:
+    targets: [prod1]
+    steps:
+      - { name: Cache, run: vendor/bin/drush cr }
   cache-clear:
     description: Rebuild Drupal caches
     targets: [web1, web2]
@@ -158,6 +163,22 @@ describe('dops CLI', () => {
     const file = join(await mkdtemp(join(tmpdir(), 'dops-db-')), 'prod dump.sql.gz');
     const { local } = await run(['db', 'pull', 'web1', '-o', file, '--import']);
     expect(local).toEqual([`ddev import-db --file='${file}'`]);
+  });
+
+  it('needs --yes before touching production targets', async () => {
+    await expect(run(['deploy', 'prod-cache'])).rejects.toThrow(
+      /Production targets: prod1\. Check with --dry-run, then pass --yes/,
+    );
+    await expect(run(['exec', '-t', 'prod1', '--', 'uptime'])).rejects.toThrow(/prod1/);
+    const dry = await run(['deploy', 'prod-cache', '--dry-run']);
+    expect(dry.commands).toEqual([]);
+    expect(dry.out).toContain('Cache: vendor/bin/drush cr');
+    expect((await run(['deploy', 'prod-cache', '--yes'])).commands).toEqual([
+      'prod1: vendor/bin/drush cr',
+    ]);
+    expect((await run(['exec', '-y', '-t', 'prod1', '--', 'uptime'])).commands).toEqual([
+      'prod1: uptime',
+    ]);
   });
 
   it('rejects unknown pipelines', async () => {

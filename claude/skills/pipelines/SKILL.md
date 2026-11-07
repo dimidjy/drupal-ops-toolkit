@@ -21,7 +21,7 @@ allowed-tools: Read, Write, Edit, Grep, Glob, Bash, AskUserQuestion
 
 ## Правила
 
-- **Ніколи не запускай pipeline сам.** Лише `--dry-run`. Справжній запуск роблю я: у dashboard або CLI.
+- **Ніколи не запускай pipeline сам.** Лише `--dry-run`. Справжній запуск роблю я: у dashboard або CLI. Прапорець `--yes` (підтвердження production) ти не передаєш ніколи.
 - **Секрети** не пишуться у файли. Хости й користувачі, що відрізняються між машинами, задаються як `${VAR}` зі значенням в env-файлі; паролів немає взагалі (SSH через ключ або агент).
 - **Середовище** = файл `environments/<env>.yml` з `targets` (і за потреби `bastions`). Назва файлу стає `environment` кожної цілі. Для production обов'язково `production: true` на початку файлу.
 - **Pipeline** = файл `pipelines/<name>.yml`, де назва файлу в kebab-case і є назвою pipeline. Поля: `description`, `environment` (або `targets`, якщо потрібні конкретні сервери), `steps`.

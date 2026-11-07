@@ -129,6 +129,12 @@ Pipelines are lists of shell steps that run on one or more targets, through
 a bastion when needed. A failing step stops the run; later targets are
 skipped so a broken release never reaches every server.
 
+Targets marked `production: true` (or listed in an environment file with
+`production: true`) never run by accident: the CLI refuses them without
+`--yes` (`--dry-run` always works), the dashboard asks for confirmation and
+shows them with a production badge, and the API answers 428 unless the request
+carries `confirmProduction: true`.
+
 SSH uses your key file or agent. No passwords are stored in the config.
 
 Steps can use `{placeholders}`: target values (`{target}`, `{path}`), site
@@ -188,24 +194,18 @@ npx dops serve                # http://127.0.0.1:4800
 The dashboard lists pipelines, starts runs on chosen targets and sites,
 streams their output live and keeps the run history. A quick-command box runs
 any one-off command (`drush status`, `tail -n 50 …/php-error.log`) on the
-ticked servers, and the Local tab does the same on this machine. It only listens on
+ticked servers. Local targets are left to the CLI. It only listens on
 localhost and every API call needs a token (`DOPS_TOKEN`, or the one printed
 on start). Exposing it on another interface requires `DOPS_ALLOW_REMOTE=1`.
-The sidebar groups everything: Deploy (pipelines, local, editor,
-parameters, runs), QA (UI tests, visual testing, page compare, reports) and
-AI & Jira (review, Jira, board).
+The sidebar groups everything: Deploy (pipelines, runs), QA (UI tests,
+visual testing, page compare, reports) and AI & Jira (review, Jira, board).
+Pipelines and parameters are edited as files, not in the dashboard.
 
 | Pipelines and quick command               | Visual testing                                 |
 | ----------------------------------------- | ---------------------------------------------- |
 | ![Pipelines](docs/screenshots/deploy.png) | ![Visual testing](docs/screenshots/visual.png) |
 | **UI tests and schedules**                | **Jira issue with AI analysis**                |
 | ![UI tests](docs/screenshots/tests.png)   | ![Jira](docs/screenshots/jira.png)             |
-
-Pipelines and parameters can also be created in the dashboard (Editor and
-Parameters tabs) from templates such as "Drupal deploy" or "Deploy with
-maintenance". They are saved to `.dops/workspace.json` (`dashboard.workspaceFile`)
-and work from the CLI too; the ones in `dops.config.yml` stay read-only and
-can be duplicated.
 
 ## Visual checks
 

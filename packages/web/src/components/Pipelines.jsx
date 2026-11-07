@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
+import { confirmProduction, productionNames } from '../production.js';
 import { ParamFields, splitParams, useParamValues } from './ParamFields.jsx';
-import { QuickCommand } from './QuickCommand.jsx';
+import { QuickCommand, TargetLabel } from './QuickCommand.jsx';
 
 /**
  * @import { Api, PipelineInfo, TargetInfo } from '../api.js'
@@ -12,7 +13,7 @@ import { QuickCommand } from './QuickCommand.jsx';
  *
  * @param {{ pipeline: PipelineInfo, targets: TargetInfo[], sites: string[], paramContext: ParamContext,
  *   onRun: (body: { pipeline: string, targets: string[], site?: string,
- *     params?: Record<string, string> }) => Promise<void> }} props
+ *     params?: Record<string, string>, confirmProduction?: boolean }) => Promise<void> }} props
  */
 function PipelineCard({ pipeline, targets, sites, paramContext, onRun }) {
   const [selected, setSelected] = useState(
@@ -31,6 +32,11 @@ function PipelineCard({ pipeline, targets, sites, paramContext, onRun }) {
     );
 
   async function run() {
+    const confirmed = confirmProduction(
+      `pipeline "${pipeline.name}"`,
+      productionNames(targets, selected),
+    );
+    if (!confirmed) return;
     setBusy(true);
     try {
       await onRun({
@@ -38,6 +44,7 @@ function PipelineCard({ pipeline, targets, sites, paramContext, onRun }) {
         targets: selected,
         ...(site ? { site } : {}),
         ...(fields.length ? { params: values.collect(fields) } : {}),
+        ...confirmed,
       });
     } finally {
       setBusy(false);
@@ -64,8 +71,7 @@ function PipelineCard({ pipeline, targets, sites, paramContext, onRun }) {
               checked={selected.includes(target.name)}
               onChange={() => toggle(target.name)}
             />{' '}
-            {target.name}
-            {target.environment && <span className="muted"> · {target.environment}</span>}
+            <TargetLabel target={target} />
           </label>
         ))}
       </fieldset>
@@ -89,12 +95,12 @@ function PipelineCard({ pipeline, targets, sites, paramContext, onRun }) {
 }
 
 /**
- * Remote scope: SSH targets and their pipelines. Local scope: targets with
- * `local: true` (commands on this machine) and pipelines that only use them.
+ * Server targets and their pipelines. Local targets (`local: true`) are left to
+ * the CLI, where `dops deploy` runs them.
  *
- * @param {{ api: Api, onStarted: (runId: string) => void, scope?: 'remote' | 'local' }} props
+ * @param {{ api: Api, onStarted: (runId: string) => void }} props
  */
-export function Pipelines({ api, onStarted, scope = 'remote' }) {
+export function Pipelines({ api, onStarted }) {
   const [pipelines, setPipelines] = useState(/** @type {PipelineInfo[]} */ ([]));
   const [targets, setTargets] = useState(/** @type {TargetInfo[]} */ ([]));
   const [sites, setSites] = useState(/** @type {string[]} */ ([]));
@@ -115,7 +121,7 @@ export function Pipelines({ api, onStarted, scope = 'remote' }) {
     );
   }, [api]);
 
-  /** @param {{ pipeline: string, targets: string[], site?: string, params?: Record<string, string> }} body */
+  /** @param {{ pipeline: string, targets: string[], site?: string, params?: Record<string, string>, confirmProduction?: boolean }} body */
   async function onRun(body) {
     setError('');
     try {
@@ -128,31 +134,20 @@ export function Pipelines({ api, onStarted, scope = 'remote' }) {
 
   const isLocal = (/** @type {string} */ name) =>
     targets.find((t) => t.name === name)?.host === 'local';
-  const scoped = targets.filter((t) => (t.host === 'local') === (scope === 'local'));
-  const shown = pipelines.filter(
-    (p) => p.targets.every(isLocal) === (scope === 'local') || !targets.length,
-  );
+  const scoped = targets.filter((t) => t.host !== 'local');
+  const shown = pipelines.filter((p) => !p.targets.every(isLocal) || !targets.length);
 
   return (
     <section>
-      <h2>{scope === 'local' ? 'Local' : 'Pipelines'}</h2>
+      <h2>Pipelines</h2>
       {error && <p className="error">{error}</p>}
-      {scope === 'local' && !scoped.length && !error ? (
-        <p className="muted">
-          No local targets. Add one with <code>local: true</code> and a <code>path</code> to the
-          config.
-        </p>
-      ) : (
-        <QuickCommand
-          api={api}
-          targets={scoped}
-          sites={sites}
-          paramContext={paramContext}
-          title={scope === 'local' ? 'Command on this machine' : 'Quick command'}
-          placeholder={scope === 'local' ? 'ddev drush cr' : 'vendor/bin/drush {alias} status'}
-          onStarted={onStarted}
-        />
-      )}
+      <QuickCommand
+        api={api}
+        targets={scoped}
+        sites={sites}
+        paramContext={paramContext}
+        onStarted={onStarted}
+      />
       <ul className="cards">
         {shown.map((pipeline) => (
           <PipelineCard

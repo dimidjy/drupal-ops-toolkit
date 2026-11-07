@@ -181,8 +181,6 @@ export const configSchema = z
       .object({
         /** Allow free-form commands from the dashboard (localhost + token only). */
         allowCommands: z.boolean().default(true),
-        /** Pipelines and parameters created in the dashboard. */
-        workspaceFile: z.string().default('.dops/workspace.json'),
       })
       .default({}),
     db: db.default({}),

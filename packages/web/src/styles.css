@@ -132,6 +132,16 @@ main {
   color: var(--fail);
 }
 
+.prod-badge {
+  margin-left: 0.4rem;
+  padding: 0 0.35rem;
+  border: 1px solid var(--fail);
+  border-radius: 4px;
+  color: var(--fail);
+  font-size: 0.75em;
+  text-transform: uppercase;
+}
+
 .cards {
   list-style: none;
   padding: 0;

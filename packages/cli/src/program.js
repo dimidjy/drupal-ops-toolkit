@@ -9,7 +9,8 @@ import {
   PipelineRunner,
   RunHistory,
   BROWSERS,
-  Workspace,
+  ProductionConfirmationError,
+  assertProductionConfirmed,
   describeTarget,
   dumpFileName,
   loadConfig,
@@ -55,12 +56,7 @@ import { formatEvent, formatTestRun } from './output.js';
 
 /** @type {Context} */
 export const defaultContext = {
-  loadConfig: async (file) => {
-    const config = await loadConfig(file);
-    // Pipelines and parameters created in the dashboard work from the CLI too.
-    await Workspace.open(config.dashboard.workspaceFile, config);
-    return config;
-  },
+  loadConfig: (file) => loadConfig(file),
   connector: (config) => sshConnector(config),
   history: (dir) => new RunHistory(dir),
   write: (text) => process.stdout.write(text),
@@ -83,6 +79,23 @@ export function createProgram(overrides = {}) {
     .showHelpAfterError();
 
   const config = () => ctx.loadConfig(program.opts().config);
+
+  /**
+   * Refuses to touch production targets unless the run was confirmed with --yes.
+   *
+   * @param {Record<string, Target>} targets
+   * @param {boolean | undefined} yes
+   */
+  const confirmProduction = (targets, yes) => {
+    try {
+      assertProductionConfirmed(targets, yes);
+    } catch (error) {
+      if (!(error instanceof ProductionConfirmationError)) throw error;
+      throw new Error(
+        `Production targets: ${error.targets.join(', ')}. Check with --dry-run, then pass --yes to run.`,
+      );
+    }
+  };
 
   program
     .command('pipelines')
@@ -116,10 +129,11 @@ export function createProgram(overrides = {}) {
     .option('-s, --site <name>', 'site whose parameters fill the {placeholders}')
     .option('-p, --param <key=value...>', 'values for {placeholders}, e.g. -p branch=release/2.4')
     .option('-n, --dry-run', 'print the commands without connecting anywhere')
+    .option('-y, --yes', 'confirm a run that includes production targets')
     .action(
       async (
         pipelineName,
-        /** @type {{ target?: string[], site?: string, param?: string[], dryRun?: boolean }} */ options,
+        /** @type {{ target?: string[], site?: string, param?: string[], dryRun?: boolean, yes?: boolean }} */ options,
       ) => {
         const cfg = await config();
         const pipeline = cfg.pipelines[pipelineName];
@@ -169,6 +183,7 @@ export function createProgram(overrides = {}) {
           return;
         }
 
+        confirmProduction(targets, options.yes);
         const runner = new PipelineRunner();
         runner.on('event', (event) => ctx.write(formatEvent(event)));
         const stopRecording = await ctx.history().record(runner);
@@ -246,10 +261,11 @@ export function createProgram(overrides = {}) {
     .requiredOption('-t, --target <name...>', 'targets to run on')
     .option('-s, --site <name>', 'site whose parameters fill {placeholders}')
     .option('-p, --param <key=value...>', 'values for {placeholders}')
+    .option('-y, --yes', 'confirm a command that includes production targets')
     .action(
       async (
         /** @type {string[]} */ words,
-        /** @type {{ target: string[], site?: string, param?: string[] }} */ options,
+        /** @type {{ target: string[], site?: string, param?: string[], yes?: boolean }} */ options,
       ) => {
         const cfg = await config();
         const command = words.join(' ');
@@ -260,6 +276,7 @@ export function createProgram(overrides = {}) {
           if (!target) throw new Error(`Unknown target "${name}"`);
           targets[name] = target;
         }
+        confirmProduction(targets, options.yes);
         let site;
         if (options.site) {
           const params = cfg.sites[options.site];

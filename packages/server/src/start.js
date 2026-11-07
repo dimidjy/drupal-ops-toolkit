@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { RunHistory, Workspace, loadConfig, sshConnector } from '@dops/core';
+import { RunHistory, loadConfig, sshConnector } from '@dops/core';
 import { buildServer } from './app.js';
 
 const LOOPBACK = new Set(['127.0.0.1', '::1', 'localhost']);
@@ -30,13 +30,11 @@ export async function startServer({
     );
   }
   const config = await loadConfig(configFile, env);
-  const workspace = await Workspace.open(config.dashboard.workspaceFile, config);
   const token = env.DOPS_TOKEN ?? randomBytes(24).toString('base64url');
   const app = buildServer({
     config,
     history: new RunHistory(),
     connect: sshConnector(config, env),
-    workspace,
     token,
     logger: { level: env.DOPS_LOG_LEVEL ?? 'info' },
     staticDir: DASHBOARD_DIR,

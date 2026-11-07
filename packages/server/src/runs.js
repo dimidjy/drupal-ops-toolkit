@@ -1,6 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
-import { PipelineRunner, assertParamValues, missingParams, paramDefaults } from '@dops/core';
+import {
+  PipelineRunner,
+  assertParamValues,
+  assertProductionConfirmed,
+  missingParams,
+  paramDefaults,
+} from '@dops/core';
 
 /**
  * @import { Config, Target, CommandExecutor, Pipeline, RunEvent, RunHistory, RunRecord } from '@dops/core'
@@ -64,6 +70,7 @@ export class RunManager extends EventEmitter {
    * @param {string[]} [request.targets]
    * @param {string} [request.site]
    * @param {Record<string, string>} [request.params]
+   * @param {boolean} [request.confirmProduction] Required when a target is a production server.
    * @returns {Promise<{ id: string, done: Promise<RunRecord> }>}
    */
   async start(request) {
@@ -81,6 +88,7 @@ export class RunManager extends EventEmitter {
    * @param {string[]} request.targets
    * @param {string} [request.site]
    * @param {Record<string, string>} [request.params]
+   * @param {boolean} [request.confirmProduction] Required when a target is a production server.
    */
   async command(request) {
     if (!request.command.trim()) throw new Error('Empty command');
@@ -103,7 +111,7 @@ export class RunManager extends EventEmitter {
   /**
    * @param {string} pipelineName
    * @param {Pipeline} pipeline
-   * @param {{ targets?: string[], site?: string, params?: Record<string, string> }} request
+   * @param {{ targets?: string[], site?: string, params?: Record<string, string>, confirmProduction?: boolean }} request
    * @returns {Promise<{ id: string, done: Promise<RunRecord> }>}
    */
   async #launch(pipelineName, pipeline, request) {
@@ -116,6 +124,7 @@ export class RunManager extends EventEmitter {
       if (!target) throw new Error(`Unknown target "${name}"`);
       targets[name] = target;
     }
+    assertProductionConfirmed(targets, request.confirmProduction);
     const busy = targetNames.filter((name) =>
       [...this.active.values()].some((run) => run.targets.includes(name)),
     );

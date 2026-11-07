@@ -3,8 +3,6 @@ import { Board } from './components/Board.jsx';
 import { History } from './components/History.jsx';
 import { Jira } from './components/Jira.jsx';
 import { PageCompare } from './components/PageCompare.jsx';
-import { Params } from './components/Params.jsx';
-import { PipelineEditor } from './components/PipelineEditor.jsx';
 import { Pipelines } from './components/Pipelines.jsx';
 import { Review } from './components/Review.jsx';
 import { RunView } from './components/RunView.jsx';
@@ -18,9 +16,6 @@ const GROUPS = /** @type {const} */ ([
     'Deploy',
     [
       ['deploy', 'Pipelines'],
-      ['local', 'Local'],
-      ['editor', 'Editor'],
-      ['params', 'Parameters'],
       ['runs', 'Runs'],
     ],
   ],
@@ -55,9 +50,6 @@ function Dashboard({ api, logout }) {
   /** @type {Record<Section, () => import('react').ReactNode>} */
   const views = {
     deploy: () => <Pipelines api={api} onStarted={setRunId} />,
-    local: () => <Pipelines key="local" api={api} onStarted={setRunId} scope="local" />,
-    editor: () => <PipelineEditor api={api} />,
-    params: () => <Params api={api} />,
     runs: () => <History api={api} onOpen={setRunId} />,
     tests: () => <Tests api={api} />,
     visual: () => <VisualTesting api={api} />,

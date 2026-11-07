@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { confirmProduction, productionNames } from '../production.js';
 import { ParamFields, placeholdersIn, splitParams, useParamValues } from './ParamFields.jsx';
 
 /**
@@ -27,12 +28,27 @@ function saveRecent(commands) {
 }
 
 /**
+ * A target's name with its environment, and a warning mark for production.
+ *
+ * @param {{ target: TargetInfo }} props
+ */
+export function TargetLabel({ target }) {
+  return (
+    <>
+      {target.name}
+      {target.environment && <span className="muted"> · {target.environment}</span>}
+      {target.production && <span className="prod-badge">production</span>}
+    </>
+  );
+}
+
+/**
  * Runs one shell command on the chosen targets, with live output in the run view.
  *
  * @param {{ api: Api, targets: TargetInfo[], sites: string[], paramContext: ParamContext,
- *   title: string, placeholder: string, onStarted: (runId: string) => void }} props
+ *   onStarted: (runId: string) => void }} props
  */
-export function QuickCommand({ api, targets, sites, paramContext, title, placeholder, onStarted }) {
+export function QuickCommand({ api, targets, sites, paramContext, onStarted }) {
   const [command, setCommand] = useState('');
   const [selected, setSelected] = useState(/** @type {string[]} */ ([]));
   const [site, setSite] = useState('');
@@ -54,6 +70,8 @@ export function QuickCommand({ api, targets, sites, paramContext, title, placeho
   /** @param {import('react').FormEvent} event */
   async function run(event) {
     event.preventDefault();
+    const confirmed = confirmProduction(`"${command.trim()}"`, productionNames(targets, effective));
+    if (!confirmed) return;
     setBusy(true);
     setError('');
     try {
@@ -62,6 +80,7 @@ export function QuickCommand({ api, targets, sites, paramContext, title, placeho
         targets: effective,
         ...(site ? { site } : {}),
         ...(fields.length ? { params: values.collect(fields) } : {}),
+        ...confirmed,
       });
       const next = [command, ...recent.filter((c) => c !== command)].slice(0, 15);
       setRecent(next);
@@ -76,7 +95,7 @@ export function QuickCommand({ api, targets, sites, paramContext, title, placeho
 
   return (
     <form className="card quick-command" onSubmit={run}>
-      <strong>{title}</strong>
+      <strong>Quick command</strong>
       <textarea
         rows={2}
         value={command}
@@ -84,7 +103,7 @@ export function QuickCommand({ api, targets, sites, paramContext, title, placeho
         onKeyDown={(e) => {
           if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) e.currentTarget.form?.requestSubmit();
         }}
-        placeholder={placeholder}
+        placeholder="vendor/bin/drush {alias} status"
         spellCheck={false}
       />
       {recent.length > 0 && (
@@ -105,8 +124,7 @@ export function QuickCommand({ api, targets, sites, paramContext, title, placeho
                 checked={selected.includes(target.name)}
                 onChange={() => toggle(target.name)}
               />{' '}
-              {target.name}
-              {target.environment && <span className="muted"> · {target.environment}</span>}
+              <TargetLabel target={target} />
             </label>
           ))}
         </fieldset>
