@@ -133,13 +133,14 @@ main {
 }
 
 .prod-badge {
-  margin-left: 0.4rem;
-  padding: 0 0.35rem;
-  border: 1px solid var(--fail);
-  border-radius: 4px;
-  color: var(--fail);
-  font-size: 0.75em;
-  text-transform: uppercase;
+  display: inline-block;
+  width: 0.45em;
+  height: 0.45em;
+  margin-left: 0.4em;
+  border-radius: 50%;
+  background: var(--fail);
+  opacity: 0.75;
+  vertical-align: middle;
 }
 
 .cards {

@@ -37,7 +37,9 @@ export function TargetLabel({ target }) {
     <>
       {target.name}
       {target.environment && <span className="muted"> · {target.environment}</span>}
-      {target.production && <span className="prod-badge">production</span>}
+      {target.production && (
+        <span className="prod-badge" title="Production server" aria-label="Production server" />
+      )}
     </>
   );
 }
