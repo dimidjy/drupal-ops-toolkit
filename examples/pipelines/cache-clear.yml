@@ -1,0 +1,5 @@
+description: Rebuild Drupal caches for one site
+environment: staging
+steps:
+  - name: Rebuild caches
+    run: vendor/bin/drush {alias} cr

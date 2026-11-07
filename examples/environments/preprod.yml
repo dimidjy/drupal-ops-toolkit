@@ -1,0 +1,7 @@
+targets:
+  preprod:
+    host: 10.0.3.10
+    user: deploy
+    agent: true
+    bastion: jump
+    path: /var/www/project

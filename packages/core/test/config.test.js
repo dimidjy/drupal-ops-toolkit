@@ -1,5 +1,113 @@
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { ConfigError, parseConfig } from '../src/config/load.js';
+import { ConfigError, loadConfig, parseConfig } from '../src/config/load.js';
+
+/**
+ * Writes a project folder: the main config plus files under it.
+ *
+ * @param {Record<string, string>} files relative path → YAML text
+ */
+async function project(files) {
+  const dir = await mkdtemp(join(tmpdir(), 'dops-config-'));
+  for (const [path, text] of Object.entries(files)) {
+    await mkdir(join(dir, path, '..'), { recursive: true });
+    await writeFile(join(dir, path), text);
+  }
+  return join(dir, 'dops.config.yml');
+}
+
+const stagingEnv = `
+bastions:
+  jump: { host: bastion.example.com, user: ops, agent: true }
+targets:
+  stage-web:
+    host: \${STAGE_HOST}
+    user: deploy
+    agent: true
+    bastion: jump
+    path: /var/www/site
+`;
+
+const prodEnv = `
+production: true
+targets:
+  prod-web1: { host: 10.0.2.11, user: deploy, agent: true, bastion: jump }
+  prod-web2: { host: 10.0.2.12, user: deploy, agent: true, bastion: jump }
+`;
+
+describe('loadConfig with pipeline and environment folders', () => {
+  it('reads environments and pipelines next to the config file', async () => {
+    const file = await project({
+      'dops.config.yml': 'sites:\n  default: { alias: "@self" }\n',
+      'environments/staging.yml': stagingEnv,
+      'environments/prod.yml': prodEnv,
+      'pipelines/cache-clear.yml': `
+description: Rebuild caches
+environment: prod
+steps:
+  - name: Rebuild caches
+    run: vendor/bin/drush {alias} cr
+`,
+      'pipelines/status.yaml': `
+targets: [stage-web]
+steps:
+  - { name: Status, run: vendor/bin/drush status }
+`,
+    });
+    const config = await loadConfig(file, { STAGE_HOST: '10.0.1.10' });
+    expect(config.targets['stage-web']).toMatchObject({
+      host: '10.0.1.10',
+      environment: 'staging',
+      production: false,
+    });
+    expect(config.targets['prod-web1']).toMatchObject({ environment: 'prod', production: true });
+    expect(config.pipelines['cache-clear']?.targets).toEqual(['prod-web1', 'prod-web2']);
+    expect(config.pipelines.status?.targets).toEqual(['stage-web']);
+  });
+
+  it('works without the folders', async () => {
+    const file = await project({ 'dops.config.yml': 'pipelines: {}\n' });
+    const config = await loadConfig(file, {});
+    expect(config.pipelines).toEqual({});
+  });
+
+  it('rejects names defined twice', async () => {
+    const file = await project({
+      'dops.config.yml': `
+targets:
+  stage-web: { local: true }
+pipelines:
+  status:
+    targets: [stage-web]
+    steps: [{ name: Status, run: drush status }]
+`,
+      'environments/staging.yml': stagingEnv,
+      'pipelines/status.yml':
+        'targets: [stage-web]\nsteps: [{ name: Status, run: drush status }]\n',
+    });
+    await expect(loadConfig(file, { STAGE_HOST: 'x' })).rejects.toThrowError(
+      /target "stage-web" is already defined[\s\S]*pipeline "status" is already defined/,
+    );
+  });
+
+  it('reports a pipeline whose environment has no targets', async () => {
+    const file = await project({
+      'dops.config.yml': '{}\n',
+      'pipelines/deploy.yml': 'environment: preprod\nsteps: [{ name: Pull, run: git pull }]\n',
+    });
+    await expect(loadConfig(file, {})).rejects.toThrowError(/environment "preprod" has no targets/);
+  });
+
+  it('names the file that cannot be parsed', async () => {
+    const file = await project({
+      'dops.config.yml': '{}\n',
+      'pipelines/broken.yml': 'steps: [unclosed\n',
+    });
+    await expect(loadConfig(file, {})).rejects.toThrowError(/Cannot parse .*broken\.yml/);
+  });
+});
 
 const valid = `
 bastions:

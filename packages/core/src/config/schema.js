@@ -29,6 +29,8 @@ const sshTarget = sshEndpoint.extend({
   bastion: name.optional(),
   /** Free-form label shown in the CLI and dashboard, e.g. "staging". */
   environment: z.string().optional(),
+  /** Set for production servers, e.g. by `production: true` in an environment file. */
+  production: z.boolean().default(false),
 });
 
 /** This machine: steps run in a local shell, e.g. `ddev drush cr` in a project folder. */
@@ -36,6 +38,7 @@ const localTarget = z.object({
   local: z.literal(true),
   path: z.string().default('.'),
   environment: z.string().optional(),
+  production: z.boolean().default(false),
 });
 
 const target = z.union([localTarget, sshTarget]);

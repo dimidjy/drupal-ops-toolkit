@@ -1,0 +1,14 @@
+description: Pull code, install dependencies, update the database and config
+environment: prod
+steps:
+  - name: Pull code
+    run: git pull --ff-only
+  - name: Install dependencies
+    run: composer install --no-dev --no-interaction --optimize-autoloader
+    timeoutSeconds: 900
+  - name: Database updates
+    run: vendor/bin/drush {alias} updb -y
+  - name: Import configuration
+    run: vendor/bin/drush {alias} cim -y
+  - name: Rebuild caches
+    run: vendor/bin/drush {alias} cr

@@ -1,0 +1,11 @@
+description: Rebuild the local DDEV site after pulling a branch
+environment: local
+steps:
+  - name: Install dependencies
+    run: ddev composer install
+  - name: Database updates
+    run: ddev drush updb -y
+  - name: Import configuration
+    run: ddev drush cim -y
+  - name: Rebuild caches
+    run: ddev drush cr

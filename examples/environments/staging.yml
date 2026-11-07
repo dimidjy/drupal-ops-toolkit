@@ -1,0 +1,14 @@
+# Every target in this file gets `environment: staging`.
+bastions:
+  jump:
+    host: ${DOPS_BASTION_HOST}
+    user: ops
+    identityFile: ~/.ssh/id_ed25519
+
+targets:
+  staging:
+    host: 10.0.1.10
+    user: deploy
+    identityFile: ~/.ssh/id_ed25519
+    bastion: jump
+    path: /var/www/project

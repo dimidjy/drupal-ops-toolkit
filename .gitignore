@@ -6,6 +6,8 @@ coverage/
 .env.*
 !.env.example
 dops.config.yml
+/pipelines/
+/environments/
 .dops/
 playwright-report/
 test-results/

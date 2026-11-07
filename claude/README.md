@@ -13,6 +13,7 @@ from a profile file in the project, so the plugin itself stays generic.
 | `dops:drush-command-audit`                  | Risk review of a custom drush command before it runs outside local                                      |
 | `dops:deploy-prep`                          | Builds the ticket branch from the production base as one commit, resolves conflicts, lists deploy steps |
 | `dops:task-report`                          | Chat-ready English report with a fixed shape and a Deploy info block                                    |
+| `dops:pipelines`                            | Writes pipeline and environment files by the project's rules and checks them with a dry run             |
 | `dops:test-content`                         | Test pages and redirects on non-production environments through the back office                         |
 | `dops:qa-start`, `dops:qa-check`            | Visual baseline before a change, after capture, diff and triage                                         |
 | `/dops:ticket-start`, `/dops:ticket-finish` | Run the skills above as one flow at the start and the end of a ticket                                   |

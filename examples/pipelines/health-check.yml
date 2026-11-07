@@ -1,0 +1,9 @@
+description: Uptime, disk and memory on every web node
+environment: prod
+steps:
+  - name: Uptime
+    run: uptime
+  - name: Disk
+    run: df -h /
+  - name: Memory
+    run: free -m

@@ -140,6 +140,30 @@ A target with `local: true` runs its steps in a shell on this machine, in its
 `path`. That's handy for local routines like `ddev drush cim` after switching
 branches, with the same history and live output as remote runs.
 
+### Pipelines and environments as files
+
+Next to `dops.config.yml`, pipelines and environments can live one per file,
+which is easier to edit (or to have an assistant generate) than one big file:
+
+```text
+dops.config.yml          sites, params, visual, tests…
+environments/
+  local.yml              targets: { laptop: { local: true, … } }
+  staging.yml            bastions and targets of staging
+  preprod.yml
+  prod.yml               production: true marks all its targets
+pipelines/
+  deploy.yml             description, environment: prod, steps
+  cache-clear.yml
+```
+
+Every target in `environments/<env>.yml` gets `environment: <env>`. A pipeline
+file can name an `environment` instead of `targets` and then runs on all of its
+targets. The file name is the pipeline name, and a name defined twice is an
+error. Both folders are gitignored here; start from
+[examples/environments](examples/environments) and
+[examples/pipelines](examples/pipelines).
+
 ## Database
 
 ```bash

@@ -1,0 +1,5 @@
+# This machine: steps run in a local shell inside path.
+targets:
+  laptop:
+    local: true
+    path: ~/projects/shop

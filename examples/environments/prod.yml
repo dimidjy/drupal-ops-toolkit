@@ -1,0 +1,16 @@
+# production: true marks every target of this file as a production server.
+production: true
+
+targets:
+  prod-web1:
+    host: 10.0.2.11
+    user: deploy
+    agent: true
+    bastion: jump
+    path: /var/www/project
+  prod-web2:
+    host: 10.0.2.12
+    user: deploy
+    agent: true
+    bastion: jump
+    path: /var/www/project
