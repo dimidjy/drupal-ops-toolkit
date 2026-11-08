@@ -116,7 +116,7 @@ visual:
   cacheBust: true # unique query parameter per capture, so Varnish serves fresh pages
   urlSets:
     demo:
-      baseUrl: https://hdcr.ddev.site
+      baseUrl: https://shop.ddev.site
       paths: [/, /user/login, /user/password]
     staging:
       baseUrl: https://staging.example.com
@@ -133,7 +133,7 @@ uiTests:
   suites:
     smoke:
       testDir: examples/ui-tests/smoke
-      baseUrl: https://hdcr.ddev.site
+      baseUrl: https://shop.ddev.site
       retries: 1
   schedules:
     - suite: smoke
