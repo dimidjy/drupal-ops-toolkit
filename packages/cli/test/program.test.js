@@ -1,6 +1,7 @@
 import { chmod, mkdtemp, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { stripVTControlCharacters } from 'node:util';
 import { gzipSync } from 'node:zlib';
 import { afterEach, describe, expect, it } from 'vitest';
 import { RunHistory, parseConfig } from '@dops/core';
@@ -55,7 +56,8 @@ async function run(args, { exitCodes = {} } = {}) {
   const program = createProgram({
     loadConfig: async () => config,
     history: () => new RunHistory(dir),
-    write: (text) => (out += text),
+    // picocolors turns colour on under CI=true; compare plain text.
+    write: (text) => (out += stripVTControlCharacters(text)),
     runLocal: async (command) => {
       local.push(command);
       return 0;
