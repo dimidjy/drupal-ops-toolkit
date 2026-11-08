@@ -31,11 +31,11 @@ Everything is driven by one YAML config. Secrets never live in it.
 
 ```bash
 npx dops test run smoke                    # is staging healthy?
-npx dops visual capture shop --label before
+npx dops visual capture staging --label before
 uv run dops-ai review --diff main...       # last look at the branch
 npx dops run deploy                        # pull, composer, updb, cim, cr on both web nodes
-npx dops visual capture shop --label after
-npx dops visual compare shop               # anything that moved?
+npx dops visual capture staging --label after
+npx dops visual compare staging            # anything that moved?
 ```
 
 ## AI in my workflow
@@ -78,6 +78,8 @@ flowchart LR
     CLI --> VIS[visual<br/>Playwright · pixelmatch]
     CLI --> UIT[ui-tests<br/>Playwright Test · cron]
     SRV --> UIT
+    SRV --> VIS
+    SRV -->|starts| AI
     AI[dops-ai<br/>Python]
   end
   CORE -->|SSH via bastion| SERVERS[(web servers)]
@@ -120,6 +122,7 @@ npx dops --help
 npx dops check                        # config, env file, SSH keys, variables: no connection
 npx dops targets                      # servers by environment, production marked
 npx dops pipelines                    # what can I run?
+npx dops sites                        # sites and the values they fill in
 npx dops run cache-clear --dry-run    # show the commands per target
 npx dops run deploy                   # run it, with live output
 npx dops exec -t prod-web1 prod-web2 -- drush status   # one-off command
@@ -144,7 +147,9 @@ mark them too.
 
 Short options mean the same everywhere: `-t` target, `-s` site, `-p` value
 for a `{placeholder}` (port for `serve`), `-e` environment, `-n` dry run,
-`-y` confirm production, `-l` limit, `-f` spec file. Everything else is a long
+`-y` confirm production, `-l` limit and `-c` config file. A few belong to one
+command: `-o` output file and `-i` import for `db pull`, and `-f` spec file,
+`-b` browser, `-u` URL and `-q` quiet for `test run`. Everything else is a long
 option only, such as `--label`, `--path`, `--force` or `--suite`.
 
 SSH uses your key file or agent. No passwords are stored in the config.
@@ -185,7 +190,7 @@ error. Both folders are gitignored here; start from
 ## Database
 
 ```bash
-npx dops db pull prod --site fr            # .dops/db/prod-fr-<time>.sql.gz
+npx dops db pull prod-web1 --site fr       # .dops/db/prod-web1-fr-<time>.sql.gz
 npx dops db pull staging --import          # and load it into the local DDEV site
 ```
 

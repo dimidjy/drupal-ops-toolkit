@@ -27,6 +27,7 @@ targets:
     bastion: jump
     path: /var/www/project
     environment: production
+    production: true # dops run, exec and db pull ask for --yes
   prod-web2:
     host: 10.0.2.12
     user: deploy
@@ -34,6 +35,7 @@ targets:
     bastion: jump
     path: /var/www/project
     environment: production
+    production: true
 
   # This machine: steps run in a local shell inside path.
   local:
